@@ -12,6 +12,7 @@
 - [x] Create user flows, AI agent specification, and testing strategy.
 - [x] Review and approve the MVP database design.
 - [x] Document SQL migration sequence and RLS security model.
+- [x] Approve SQL migration and RLS implementation plan.
 - [ ] Enable GitHub secret scanning and push protection where available.
 - [ ] Connect repository to Bolt without overwriting documentation.
 
@@ -24,7 +25,6 @@
 - [ ] Add GitHub Actions CI using actual package scripts.
 
 ## Phase 2 — Supabase foundation
-- [ ] Review and approve SQL migration and RLS implementation details.
 - [ ] Create a new Supabase development project.
 - [ ] Configure Auth providers and redirect URLs.
 - [ ] Create and commit SQL migrations.
