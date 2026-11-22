@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { supabase } from "../lib/supabase";
 import { fetchMonthSummary, fetchTransactions } from "../lib/transactions";
+import { fetchBills, type RecurringBill } from "../lib/bills";
 import {
   budgetStatus,
   computeProgress,
@@ -26,6 +27,11 @@ interface DashboardData {
   cash: CashPosition | null;
 }
 
+function todayDash(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
 export default function Dashboard() {
   const { profile, user } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -39,6 +45,9 @@ export default function Dashboard() {
   const [recentLoading, setRecentLoading] = useState(true);
   const [txError, setTxError] = useState<string | null>(null);
   const [budgets, setBudgets] = useState<BudgetWithProgress[] | null>(null);
+  const [upcomingBills, setUpcomingBills] = useState<RecurringBill[] | null>(null);
+  const [billsError, setBillsError] = useState<string | null>(null);
+  const [billsLoading, setBillsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,6 +122,26 @@ export default function Dashboard() {
           setRecent(txResult.rows.slice(0, 5));
         }
         setBudgets(budgetResult.error ? null : budgetResult.budgets);
+        fetchBills().then((billsResult) => {
+          if (cancelled) {
+            return;
+          }
+          if (billsResult.error) {
+            setBillsError(billsResult.error);
+            setUpcomingBills(null);
+          } else {
+            const now = new Date();
+            const horizon = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+            const horizonIso = `${horizon.getFullYear()}-${String(horizon.getMonth() + 1).padStart(2, "0")}-${String(horizon.getDate()).padStart(2, "0")}`;
+            setUpcomingBills(
+              billsResult.bills
+                .filter((b) => b.is_active && b.next_due_date <= horizonIso)
+                .sort((a, b) => a.next_due_date.localeCompare(b.next_due_date))
+                .slice(0, 5)
+            );
+          }
+          setBillsLoading(false);
+        });
         setSummaryLoading(false);
         setRecentLoading(false);
       }
@@ -246,6 +275,40 @@ export default function Dashboard() {
                           {b.category_name ? `${b.category_name} budget` : "Overall budget"} approaching the limit (80%+ used).
                         </div>
                       )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {billsLoading && <div className="spinner" role="status" aria-label="Loading upcoming bills" />}
+          {!billsLoading && billsError && (
+            <div className="alert alert-error" role="alert">
+              {billsError}
+            </div>
+          )}
+          {!billsLoading && !billsError && upcomingBills !== null && upcomingBills.length > 0 && (
+            <div className="card">
+              <div className="month-summary-head">
+                <h2>Upcoming bills (next 14 days)</h2>
+                <Link to="/bills" className="button button-secondary">
+                  Manage bills
+                </Link>
+              </div>
+              <div className="tx-list">
+                {upcomingBills.map((bill) => {
+                  const overdue = bill.next_due_date < todayDash();
+                  const dueToday = bill.next_due_date === todayDash();
+                  return (
+                    <div key={bill.id} className="tx-item">
+                      <div className="tx-item-main">
+                        <span className={`tx-amount ${overdue ? "expense" : ""}`}>{formatCurrency(bill.amount, currency)}</span>
+                        <span className="tx-desc">{bill.name}</span>
+                        <span className={`tx-meta ${overdue ? "over-text" : ""}`}>
+                          {overdue ? `Overdue — was due ${bill.next_due_date}` : dueToday ? "Due today" : `Due ${bill.next_due_date}`}
+                        </span>
+                      </div>
                     </div>
                   );
                 })}
