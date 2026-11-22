@@ -1,21 +1,41 @@
-# Architecture Decision Records
+# Product and Architecture Decisions — aimass4.2
 
 ## ADR-001: Supabase for backend and database
-**Status:** Proposed
-
+**Status:** Accepted  
 Use Supabase PostgreSQL, Auth, RLS, and Edge Functions to reduce backend operational overhead while retaining SQL migrations and explicit data ownership policies.
 
 ## ADR-002: Server-side OpenAI integration
-**Status:** Accepted
-
+**Status:** Accepted  
 The OpenAI API key must be stored as a Supabase Edge Function secret. The browser must never call OpenAI using a private key.
 
 ## ADR-003: Read-only AI assistant for MVP
-**Status:** Accepted
-
-The AI assistant can summarize and suggest but cannot create, edit, or delete financial records. This limits the impact of incorrect or manipulated model output.
+**Status:** Accepted  
+The AI assistant may provide insights, recommendations, forecast explanations, and conversational answers. It cannot create, edit, delete, pay, or schedule financial records.
 
 ## ADR-004: GitHub as source of truth
-**Status:** Accepted
-
+**Status:** Accepted  
 Project source, documentation, migrations, tests, and CI configuration are version-controlled in this repository. Bolt and Codex changes must be reflected in GitHub.
+
+## ADR-005: Salary schedules
+**Status:** Accepted  
+MVP supports monthly and biweekly pay schedules only. Biweekly means every 14 days. Monthly schedules use calendar-month progression; if a target day does not exist in a month, use that month's last calendar day. No weekend/holiday adjustment in MVP.
+
+## ADR-006: Bill reminders
+**Status:** Accepted  
+MVP reminders are in-app only, derived from active recurring bills and their due dates. Email and push notifications are deferred.
+
+## ADR-007: AI capabilities
+**Status:** Accepted  
+MVP AI scope is limited to spending insights, budget/savings recommendations, cash-flow forecast explanations, and conversational budgeting Q&A. Automatic expense categorization and autonomous actions are excluded.
+
+## ADR-008: Subscription pricing
+**Status:** Deferred  
+Do not implement subscriptions, payment processing, premium feature gates, or the proposed ₱149/month price in MVP. Validate product usage first.
+
+## ADR-009: PDF reports
+**Status:** Deferred  
+PDF report generation/export is post-MVP.
+
+## ADR-010: Cash position and forecast
+**Status:** Accepted for MVP  
+User manually enters a cash position and the date it is accurate as of. The app estimates cash through the next payday using subsequent recorded transactions, expected salary, and unpaid bill occurrences. Forecasts must disclose assumptions and are not guaranteed balances.
