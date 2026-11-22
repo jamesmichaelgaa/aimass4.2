@@ -114,7 +114,7 @@ export function getMonthMeta(base: Date = new Date()): { ym: string; label: stri
 }
 
 // Sums decimal strings exactly using cent arithmetic (no binary floats).
-export function sumAmounts(rows: Array<{ amount: string }>): string {
+export function sumAmounts(rows: Array<{ amount: string | number }>): string {
   let cents = 0n;
   for (const row of rows) {
     cents += amountToCents(row.amount);
@@ -123,7 +123,7 @@ export function sumAmounts(rows: Array<{ amount: string }>): string {
 }
 
 // Adds signed amounts: positive strings add, "-x" strings subtract.
-export function addSignedAmounts(amounts: string[]): string {
+export function addSignedAmounts(amounts: Array<string | number>): string {
   let cents = 0n;
   for (const amount of amounts) {
     cents += amountToCents(amount);
@@ -132,11 +132,16 @@ export function addSignedAmounts(amounts: string[]): string {
 }
 
 // Difference of two decimal strings, exact (a - b).
-export function diffAmounts(a: string, b: string): string {
+export function diffAmounts(a: string | number, b: string | number): string {
   return centsToDecimalString(amountToCents(a) - amountToCents(b));
 }
 
-export function amountToCents(amount: string): bigint {
+// PostgREST returns numeric columns as JSON numbers; accept both shapes so
+// string-based cent math never breaks on a raw number from the database.
+export function amountToCents(amount: string | number): bigint {
+  if (typeof amount === "number") {
+    amount = amount.toString();
+  }
   const negative = amount.startsWith("-");
   const unsigned = negative ? amount.slice(1) : amount;
   const [intPart, decPart] = unsigned.split(".");

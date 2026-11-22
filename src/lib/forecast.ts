@@ -189,6 +189,12 @@ export interface ForecastUnavailable {
 
 export const SALARY_CATEGORY_NAME = "salary";
 
+// PostgREST returns numeric columns as JSON numbers; every money value is
+// normalized to a decimal string so all downstream math is string-based.
+function asDecimalString(value: string | number): string {
+  return typeof value === "number" ? value.toFixed(2) : String(value);
+}
+
 async function fetchSalaryCategoryId(): Promise<string | null> {
   try {
     const { data, error } = await supabase
@@ -237,12 +243,19 @@ async function fetchPaidOccurrenceKeys(billIds: string[], from: string, to: stri
   return keys;
 }
 
-export async function computeForecast(schedule: IncomeSchedule, cashAmount: string, cashAsOf: string): Promise<ForecastResult | ForecastUnavailable> {
-  if (!isValidDate(cashAsOf) || !isValidDate(schedule.next_payday)) {
+export async function computeForecast(schedule: IncomeSchedule, cashAmount: string | number, cashAsOf: string): Promise<ForecastResult | ForecastUnavailable> {
+  // PostgREST serializes numeric as JSON numbers; every money value is
+  // normalized to a decimal string here so all downstream math is string-based.
+  const scheduleSafe: IncomeSchedule = {
+    ...schedule,
+    expected_amount: asDecimalString(schedule.expected_amount),
+  };
+  const cashAmountSafe = asDecimalString(cashAmount);
+  if (!isValidDate(cashAsOf) || !isValidDate(scheduleSafe.next_payday)) {
     return { ok: false, reason: "bad-dates", message: "Your cash position date or payday is not a valid date. Fix it in Settings or onboarding." };
   }
 
-  const payday = nextPaydayAfter(schedule, cashAsOf);
+  const payday = nextPaydayAfter(scheduleSafe, cashAsOf);
 
   // Recorded activity strictly after the as-of date through the payday.
   const filters: TransactionFilters = { from: addDays(cashAsOf, 1), to: payday, kind: null, categoryId: null };
@@ -250,18 +263,19 @@ export async function computeForecast(schedule: IncomeSchedule, cashAmount: stri
   if (txResult.error) {
     return { ok: false, reason: "bad-dates", message: txResult.error };
   }
-  const transactions = txResult.rows;
+  const transactions = txResult.rows.map((t) => ({ ...t, amount: asDecimalString(t.amount) }));
 
   const billsResult = await fetchBills();
   if (billsResult.error) {
     return { ok: false, reason: "bad-dates", message: billsResult.error };
   }
+  const bills = billsResult.bills.map((b) => ({ ...b, amount: asDecimalString(b.amount) }));
   const paidKeys = await fetchPaidOccurrenceKeys(
-    billsResult.bills.map((b) => b.id),
+    bills.map((b) => b.id),
     addDays(cashAsOf, 1),
     payday
   );
-  const unpaid = unpaidBillOccurrences(billsResult.bills, paidKeys, cashAsOf, payday);
+  const unpaid = unpaidBillOccurrences(bills, paidKeys, cashAsOf, payday);
 
   // Reconciliation: an already-recorded salary transaction for this payday
   // replaces the expected salary line (no double counting).
@@ -275,13 +289,13 @@ export async function computeForecast(schedule: IncomeSchedule, cashAmount: stri
       category_id: t.category_id,
       created_at: t.created_at,
     })),
-    schedule,
+    scheduleSafe,
     payday,
     salaryCategoryId
   );
 
   const events: ForecastEvent[] = [
-    { date: cashAsOf, kind: "start", label: "Starting cash (as of this date)", amount: cashAmount },
+    { date: cashAsOf, kind: "start", label: "Starting cash (as of this date)", amount: cashAmountSafe },
   ];
 
   let recordedIncomeCents = 0n;
@@ -312,7 +326,7 @@ export async function computeForecast(schedule: IncomeSchedule, cashAmount: stri
       date: payday,
       kind: "expected-salary",
       label: "Expected salary (not yet received)",
-      amount: schedule.expected_amount,
+      amount: scheduleSafe.expected_amount,
     });
   }
 
@@ -330,10 +344,10 @@ export async function computeForecast(schedule: IncomeSchedule, cashAmount: stri
   const recordedIncome = centsToDecimalString(recordedIncomeCents);
   const recordedExpenses = centsToDecimalString(recordedExpenseCents);
   const billTotalCents = unpaid.reduce((acc, occ) => acc + amountToCents(occ.amount), 0n);
-  const expectedSalaryAmount = expectedSalaryReconciled ? "0.00" : schedule.expected_amount;
+  const expectedSalaryAmount = expectedSalaryReconciled ? "0.00" : scheduleSafe.expected_amount;
 
   const estimatedEndingCash = addSignedAmounts([
-    cashAmount,
+    cashAmountSafe,
     recordedIncome,
     `-${recordedExpenses}`,
     expectedSalaryAmount,
@@ -356,7 +370,7 @@ export async function computeForecast(schedule: IncomeSchedule, cashAmount: stri
     asOfDate: cashAsOf,
     startDate: addDays(cashAsOf, 1),
     endDate: payday,
-    startingCash: cashAmount,
+    startingCash: cashAmountSafe,
     recordedIncome,
     recordedExpenses,
     expectedSalary: expectedSalaryAmount,
