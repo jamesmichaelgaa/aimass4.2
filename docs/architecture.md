@@ -1,107 +1,115 @@
 # Architecture Notes — aimass4.2
 
 ## 1. Product context
-aimass4.2 is an AI-assisted personal budgeting application for Filipino employees and young professionals with regular monthly or biweekly income. The MVP focuses on manual tracking, budgets, recurring bill reminders, payday forecasting, and AI spending insights. Bank/e-wallet integrations are excluded from MVP.
+aimass4.2 is an AI-assisted personal budgeting web application for Filipino employees and young professionals with monthly or biweekly income. MVP includes manual tracking, budgets, recurring bills with in-app reminders, payday cash-flow forecasting, and four AI capabilities: spending insights, budget/savings recommendations, forecast explanations, and conversational budgeting Q&A.
 
-## 2. System overview
+Subscription pricing, PDF reports, email/push reminders, bank integrations, and automatic AI categorization are deferred.
+
+## 2. Technology choices
+- **Frontend and hosting:** Bolt-generated React + TypeScript + Vite application; Bolt Hosting is the initial deployment target.
+- **Backend/database:** Supabase PostgreSQL, Auth, Row Level Security, and Edge Functions.
+- **AI:** OpenAI API called only by a trusted server-side Edge Function.
+- **Source control:** GitHub is the source of truth.
+- **Engineering agent:** Codex follows AGENTS.md, adds tests, and reviews changes.
+- **CI:** GitHub Actions for lint, typecheck, tests, and build after package scripts exist.
+
+## 3. System overview
 ```text
 User
   |
   v
-Bolt-hosted React + TypeScript web application
+Bolt-hosted React + TypeScript client
   |                         |
-  | Supabase session        | authenticated AI request
+  | authenticated CRUD      | authenticated AI request
   v                         v
 Supabase Auth          Supabase Edge Function
   |                         |
   v                         v
-PostgreSQL + RLS         OpenAI API
+PostgreSQL + RLS          OpenAI API
   |
-  +-- profiles and salary schedules
-  +-- income/expense transactions
-  +-- categories and budgets
-  +-- recurring bills and reminders
-  +-- forecast inputs/snapshots (if needed)
-  +-- savings goals (MVP scope subject to prioritization)
+  +-- profiles and cash positions
+  +-- monthly/biweekly income schedules
+  +-- income/expense transactions and categories
+  +-- monthly budgets
+  +-- recurring bills and paid occurrences
+  +-- optional savings goals if retained after schema review
 
-GitHub stores source, docs, migrations, tests, and CI.
-Codex implements/reviews code following AGENTS.md.
+GitHub: source, docs, migrations, tests, CI
+Codex: repository-aware implementation and review
 ```
 
-## 3. Technology choices
-- **Frontend/hosting:** Bolt-generated React + TypeScript + Vite application; Bolt Hosting is the initial preferred deployment target for simplicity.
-- **Backend/database:** Supabase PostgreSQL, Auth, RLS, and Edge Functions.
-- **AI:** OpenAI API called only by a trusted server-side Edge Function.
-- **Source control:** GitHub is the source of truth.
-- **Engineering agent:** Codex follows AGENTS.md, adds tests, and reviews changes.
-- **CI:** GitHub Actions for lint, typecheck, tests, and build once scripts are established.
-
 ## 4. Main components
-### Web client
+
+### 4.1 Web client
 - Handles presentation, navigation, user input, and authenticated Supabase calls.
-- Displays transaction, budget, bill, and forecast information.
-- Client-side checks improve usability but are not security controls.
+- Displays transactions, budgets, bills, cash position, payday forecast, and AI responses.
+- Client validation improves usability but is not a security boundary.
 - Never contains OpenAI API keys or Supabase service-role credentials.
 
-### Supabase Auth and PostgreSQL
-- Auth establishes the user identity.
-- PostgreSQL stores user profiles, pay schedules, transactions, categories, budgets, recurring bills, and reminder state.
+### 4.2 Supabase Auth and PostgreSQL
+- Auth establishes user identity and session.
+- PostgreSQL stores profiles, cash position/as-of date, salary schedules, transactions, categories, budgets, recurring bills, and paid bill occurrences.
 - RLS enforces ownership at the database boundary.
-- Use migrations as the canonical schema history.
-- Store money as PostgreSQL numeric values.
+- SQL migrations are the canonical schema history.
+- Monetary values use PostgreSQL numeric types.
 
-### Recurring bill and reminder processing
-- Store recurrence rule, next due date, amount, and status separately from paid transactions.
-- A bill becomes a paid expense only through an explicit user action or verified workflow.
-- Prevent duplicate expense creation when a bill is marked paid.
-- In-app reminders can be derived from upcoming due dates at read time for MVP; scheduled email/push delivery is a later enhancement unless specifically approved.
+### 4.3 In-app bill reminders
+- Recurring bill records store frequency and next due date.
+- The application queries the user's active bills and derives upcoming/overdue states.
+- Reminders appear in the dashboard and bills screen when the user opens the application.
+- No email, push, or scheduled delivery service is required for MVP.
+- A bill occurrence is marked paid through an explicit user action. Link it to one expense transaction or create that transaction atomically through a safe database operation to prevent double counting.
+- Use a unique bill-occurrence identity (bill + due date) to prevent duplicate payment records.
 
-### Payday forecast service
-- Calculate estimates using user-entered starting balance, salary schedule, recorded transactions, and upcoming recurring obligations through the next expected payday.
-- Clearly expose the date range and assumptions.
-- Keep calculation logic deterministic and testable; AI may explain the result but must not invent or replace numeric calculations.
-- Treat forecast output as an estimate, not a guaranteed balance.
+### 4.4 Payday and cash-flow forecast
+- Deterministic application/database logic calculates the estimate through the next expected payday.
+- Inputs: user-entered cash position and as-of date, recorded transactions after that date, expected monthly/biweekly salary, and unpaid recurring bill occurrences due within the forecast period.
+- Monthly recurrence uses calendar-month progression; biweekly recurrence advances by 14 days.
+- For a monthly payday that does not exist in a given month, use that month's last calendar day. Weekend/holiday adjustments are not in MVP.
+- Clearly expose date range, source inputs, expected income, unpaid bills, and estimated remaining cash.
+- AI may explain the result but cannot recalculate, overwrite, or invent authoritative amounts.
 
-### AI Edge Function
-- Verify the caller's Supabase JWT and derive user identity from it.
-- Validate request payload and rate-limit requests.
-- Retrieve only relevant user-scoped aggregates and records.
-- Minimize sensitive context before sending to OpenAI.
-- Keep provider key in Supabase Edge Function secrets.
-- Treat transaction notes and other user-controlled content as untrusted.
-- Return constrained explanatory text; never execute model-generated code or SQL.
-- MVP assistant is read-only and cannot mutate financial records.
+### 4.5 AI Edge Function
+- Verify caller's Supabase JWT and derive user identity from verified claims.
+- Validate payload, enforce request limits, and rate-limit AI usage.
+- Retrieve only minimal data belonging to the authenticated user.
+- Send only relevant summaries to OpenAI; never send credentials, access tokens, or unnecessary identifiers.
+- Support: spending insights, budget/savings recommendations, forecast explanations, and conversational budgeting Q&A.
+- Treat transaction notes and other user-controlled text as untrusted content.
+- Treat model output as untrusted; render safely and never execute generated code or SQL.
+- AI is read-only in MVP and cannot modify any financial records.
 
-## 5. Data flow
+## 5. Key data flow
 1. User authenticates with Supabase Auth.
-2. Client reads/writes permitted records; PostgreSQL RLS enforces ownership.
-3. Transactions and budgets update dashboard summaries.
-4. Forecast logic combines manually entered balance, pay schedule, transactions, and upcoming bills for the selected forecast window.
-5. AI request is sent to an authenticated Edge Function.
-6. Function retrieves minimal relevant user data, calls OpenAI, and returns an explanation or recommendation.
-7. User remains in control of all changes.
+2. Client reads/writes allowed records; RLS enforces ownership.
+3. Transactions and budgets update dashboard aggregates.
+4. Recurring bill due dates drive in-app upcoming/overdue reminders.
+5. Forecast logic combines the user's cash position, salary schedule, transactions, and unpaid bill occurrences.
+6. Client sends a question or selected AI task to the authenticated Edge Function.
+7. Function verifies identity, retrieves minimal relevant data, calls OpenAI, and returns a grounded response.
+8. User reviews the response and remains responsible for all changes.
 
 ## 6. Security and privacy
-- Enable RLS for every user-owned table.
-- Do not trust client-provided user IDs.
-- Keep privileged keys and provider secrets server-side.
+- Enable RLS on every user-owned table.
+- Never trust client-supplied user IDs.
+- Keep OpenAI and service-role secrets server-side.
 - Do not put secrets in VITE_ variables.
-- Minimize data sent to AI; never send auth tokens or credentials.
+- Minimize data sent to AI; never send credentials or auth tokens.
 - Avoid logging transaction descriptions and sensitive financial details.
-- Test cross-user isolation and prompt-injection handling.
-- See docs/security.md.
+- Test cross-user isolation, prompt injection, and authorization.
+- See docs/security.md and docs/ai-agent-spec.md.
 
-## 7. Deployment and environments
-- Use a separate development Supabase project and production project when practical.
-- Bolt Hosting serves the web frontend.
+## 7. Environments and deployment
+- Use separate development and production Supabase projects when practical.
+- Bolt Hosting serves the frontend.
 - Supabase hosts database, auth, and Edge Functions.
-- Configure public frontend environment variables separately from server-side secrets.
+- Configure public frontend settings separately from server-side secrets.
 - Apply migrations deliberately and verify RLS before real users enter data.
-- CI should run quality checks before changes are merged/deployed.
+- GitHub Actions should run quality checks before merge/deployment.
 
-## 8. Open technical decisions
-- Exact schedule model for monthly/biweekly payroll and edge cases around weekends/holidays.
-- Whether to persist forecast snapshots or calculate on demand.
-- Reminder delivery mechanism beyond in-app reminders.
-- Whether savings goals are included in MVP.
-- Whether PDF reports and premium subscription are launch requirements.
+## 8. Deferred architecture
+- Subscription/payment provider and premium entitlements.
+- PDF generation/export.
+- Email/push notification delivery.
+- Bank/e-wallet integrations and automatic transaction categorization.
+- Weekend/holiday salary date adjustment.
