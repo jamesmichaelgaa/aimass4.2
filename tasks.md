@@ -51,8 +51,8 @@ The forecast's expected-vs-actual salary matching rule is application logic and 
 ## Phase 3 — Core budgeting features
 - [ ] Profile, preferred currency, timezone, and cash position/as-of date.
 - [ ] Onboarding for monthly/biweekly salary and next payday.
-- [ ] Manual income and expense tracking.
-- [ ] Default and custom categories.
+- [x] Manual income and expense tracking (implemented 2026-11-22; browser round-trip testing PENDING — see Phase 2A status below).
+- [x] Default and custom categories (implemented 2026-11-22: management UI in Settings; browser round-trip testing PENDING).
 - [ ] Overall and category monthly budgets.
 - [ ] Dashboard income, expenses, cash position, and budget progress.
 - [ ] Recurring bill setup and recurrence rules.
@@ -60,6 +60,10 @@ The forecast's expected-vs-actual salary matching rule is application logic and 
 - [ ] Mark bill occurrence paid and prevent duplicate expense counting.
 - [ ] Deterministic payday/cash-flow forecast with visible assumptions.
 - [ ] Settings and account/data management.
+
+### Phase 2A status (2026-11-22): transactions and categories UI
+Implemented: full transaction CRUD (add income/expense, edit, delete with confirmation), filters (date range, type, category), date-range summary (income/expenses/net via exact decimal-string cent arithmetic), current-month dashboard summary plus five most recent transactions, and category management (add custom income/expense categories; default/system categories have no edit or delete controls and the database forbids modifying or deleting them). No new tables or migrations; existing transactions/categories tables and owner-scoped RLS policies are used as-is. Amounts are validated as decimal strings and persisted to numeric without binary-float conversion. Currency shown from the user's profile.
+Verification: `npm run typecheck` and `npm run build` pass. Database integrity confirmed via schema inspection: transactions.category composite FK (user_id, category_id, kind) → categories(user_id, id, kind) enforces category ownership AND type match; unique index on (user_id, lower(name), kind) blocks duplicate category names; RLS owner policies on both tables. Still pending: interactive browser testing (signup → add income/expense → edit → delete → filters → totals) and a live RLS cross-user probe; test framework not installed (no existing one; adding Vitest would be a new dependency — deferred unless requested).
 
 ## Phase 4 — AI assistant
 - [ ] Create authenticated Supabase Edge Function.

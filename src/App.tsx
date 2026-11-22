@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import ProtectedLayout from "./pages/ProtectedLayout";
 import Dashboard from "./pages/Dashboard";
 import Settings from "./pages/Settings";
+import Transactions from "./pages/Transactions";
 import LogIn from "./pages/LogIn";
 import SignUp from "./pages/SignUp";
 import OnboardingProfile from "./pages/onboarding/ProfileStep";
@@ -63,6 +64,9 @@ function AppRoutes() {
             <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>
               Dashboard
             </NavLink>
+            <NavLink to="/transactions" className={({ isActive }) => (isActive ? "active" : "")}>
+              Transactions
+            </NavLink>
             <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
               Settings
             </NavLink>
@@ -83,6 +87,7 @@ function AppRoutes() {
           </Route>
           <Route element={<ProtectedLayout />}>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/transactions" element={<Transactions />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

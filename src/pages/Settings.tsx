@@ -1,5 +1,6 @@
 import { useAuth } from "../lib/auth";
 import { isValidCurrency } from "../lib/types";
+import CategoryManager from "./CategoryManager";
 import { useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 
@@ -109,6 +110,7 @@ export default function Settings() {
           </div>
         </form>
       </div>
+      <CategoryManager />
       <div className="card">
         <h2>Account</h2>
         <p className="center-note" style={{ textAlign: "left", padding: "4px 0 12px" }}>
