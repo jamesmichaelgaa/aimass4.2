@@ -68,6 +68,7 @@ export default function Forecast() {
     }
     let cancelled = false;
     setComputing(true);
+    setForecast(null);
     computeForecast(load.schedule, load.cash.amount, load.cash.as_of_date)
       .then((result) => {
         if (!cancelled) {
@@ -75,9 +76,14 @@ export default function Forecast() {
           setComputing(false);
         }
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
+        console.error("forecast computation failed", cause);
         if (!cancelled) {
-          setForecast({ ok: false, reason: "bad-dates", message: "Could not compute the forecast. Please refresh and try again." });
+          setForecast({
+            ok: false,
+            reason: "bad-dates",
+            message: "Could not compute the forecast. Please refresh and try again — the technical cause was printed to the browser console (F12).",
+          });
           setComputing(false);
         }
       });
