@@ -311,6 +311,36 @@ Full results in **docs/testing-results-transactions.md**. Summary:
 - **Rerun: 18 PASS / 0 FAIL / 0 BLOCKED** (all 18 Transactions cases, including the new T-03 valid/invalid-format regression probes — each valid format inserted, cent-compared, cleaned up — and the T-05 uncategorized-totals assertions). The original 17 passing cases all still pass. `npm run typecheck` and `npm run build` both pass.
 - Per the review gate, the Budgets test batch (Stage 3) awaits review sign-off of these transaction results.
 
+### Stage 3 execution results (2026-11-22): Budgets batch EXECUTED — 17 PASS / 0 FAIL / 0 BLOCKED
+Full results in **docs/testing-results-budgets.md**. Summary:
+- Reused the deferred txa/txb accounts (scripts/budget-tests.mjs). All B-01…B-14 passed against the existing implementation; the plan's Groceries/Transport categories were mapped to the real seeded defaults (Food/Transportation); three harness-only bugs fixed (JSON-number comparisons, missing .select("id")). No app code changed.
+
+### Stage 4 execution results (2026-11-22): Recurring Bills batch EXECUTED — 16 PASS / 0 FAIL after one REAL DB bug fixed
+Full results in **docs/testing-results-bills.md**. Summary:
+- **Real defect found and fixed:** the deployed `advance_due_date` helper caught the wrong SQLSTATE in its month-end clamping loop (22003 instead of the 22008 that `make_date` raises), so ANY bill due on the 29th–31st could never be marked paid ("date field value out of range: 2026-02-31"). Fixed in migration `20261122120000_advance_due_date_clamp_sqlstate_22008.sql` (applied, idempotent, ACLs/search_path preserved); verified Jan-31→Feb-28, Mar-31→Apr-30, quarterly Nov-30→Feb-28, yearly Feb-29→Feb-28.
+- After the fix, R-01…R-14 all PASS, stable across four consecutive runs (weekly +7d, clamps, overdue classification, atomic single-expense payment + advance, amount override, duplicate-payment rejection, payment history, deactivation, income-category rejection, forged cross-user category rejection, cross-user RPC denial with no existence leak, edit persistence).
+- Harness-only fixes: cleanup ordering (bill_payments RESTRICT-references bills — payments→bills→transactions), Rent fixture pinned by created id, R-07 delta-counting (payment-linked rows are not client-deletable by design; leftovers removed at final teardown).
+- No frontend code changed. typecheck + build pass.
+
+### Stage 5 execution results (2026-11-22): AI Assistant batch EXECUTED — 11/11 verified
+Full results in **docs/testing-results-ai.md**. Summary:
+- Live calls against the deployed function plus static source checks (scripts/ai-tests.mjs).
+- Verified: unauthenticated 401 (gateway verify_jwt), payload validation (empty/oversize/malformed → generic 400), grounded answers with forecastAvailable=false (forecast block intentionally not wired yet per docs/ai-agent-spec.md §9b), cross-user isolation (B cannot see A's uniquely-tagged transaction; the context builder never selects description columns), off-topic refusal, read-only refusal of write requests, prompt-injection failure, no-fabrication honesty, rate limiting 10/60s (verified via direct probes: an invalid-payload burst trips 429 on the 11th call and a fresh-bucket valid burst on the 12th; the in-harness burst is timing-sensitive because each model call takes 1–3 s), no service-role use, no key literals, no eval/write sinks.
+- No application code changed. typecheck + build pass.
+
+### Remaining verification stages (not yet run)
+- Forecast batch F-01…F-15 (docs/testing-plan-financial.md §6), per the docs/salary-reconciliation.md contract, using the same deferred accounts.
+- Security batch: X-01…X-06 cross-user matrix across all eight tables, forged IDs, edge-function auth, account-deletion round-trip, password-reset flow.
+- Final report docs/mvp-testing-summary.md and FX-5 account teardown at the very end.
+
+### Stage 3 execution results (2026-11-22): Budgets batch EXECUTED — 17 PASS / 0 FAIL / 0 BLOCKED
+Full results in **docs/testing-results-budgets.md**. Summary:
+- Reused the deferred txa/txb accounts (real password sessions, anon key only, no service-role key).
+- All of B-01…B-14 passed against the existing implementation: overall + category budget CRUD, duplicate prevention (DB unique indexes), exact-cent progress math (overall 1250.00/6.25% vs category 1000.00/33.33%), 80%/100% threshold boundaries (799.99 vs 800.00; 1000.00 vs 1200.00 with remaining −200.00), uncategorized-expenses-lift-overall-only (approved T-05 rule re-verified in the budget path), income exclusion, limit edit recompute, delete, month-picker windowing + per-month isolation, cross-month total isolation, cross-user RLS (read/update/delete zero rows, forged user_id insert rejected), and invalid-limit rejection.
+- Fixture note: the plan's "Groceries"/"Transport" categories do not exist; the harness mapped them to the real seeded defaults (Food/Transportation) — substance of every assertion unchanged.
+- No application code was modified in this stage; three test-harness bugs were fixed during execution (JSON-number vs decimal-string comparisons in B-01/B-09/B-13 — the same trap the Transactions stage documented — and missing `.select("id")` on probe inserts). All documented in the results file.
+- `npm run typecheck` and `npm run build` both pass. Accounts kept (data cleaned) for the Bills stage.
+
 ### Deliberately not done in this audit (per instructions)
 - No feature rebuilds; no new MVP scope. The only code change made during this audit was replacing the stale Dashboard "Coming next" card (which wrongly claimed budgets/bills/forecast/AI were unreleased) with an accurate getting-started card that points to Transactions and the AI Assistant.
 
