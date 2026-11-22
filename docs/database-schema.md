@@ -1,6 +1,6 @@
 # Database Schema — aimass4.2
 
-**Status:** Reviewed and approved MVP design; implementation must happen through versioned SQL migrations after documentation is finalized. No Supabase project or migration has been created yet. All persisted money uses PostgreSQL `numeric`, never floating-point types.
+**Status:** Implemented 2026-11-22. The eight tables, RLS policies, indexes, constraints, and the atomic bill-payment RPC are applied to the Supabase development project (nine migration files; see docs/sql-migration-plan.md "Implemented status" and docs/sql/migrations/). All persisted money uses PostgreSQL `numeric`, never floating-point types. The conditional currency rule of ADR-011 is prepared but not yet applied; the currently applied trigger blocks all currency changes.
 
 ## Design principles
 

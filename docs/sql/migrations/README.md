@@ -33,3 +33,11 @@ history is the executable source of truth.
   apply.
 - Every file above is exactly what the database executed; no editorial
   cleanup was performed.
+
+## Pending migration (prepared, NOT applied)
+
+- `pending/20261122110000_adr011_conditional_currency_rule.sql` — implements
+  ADR-011: allows preferred-currency changes only while the user has no
+  financial records (no transactions, bill payments, or budgets); blocks
+  changes once any exist. Awaiting approval before being applied through the
+  Supabase migration tool.
