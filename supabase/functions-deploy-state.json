@@ -4,6 +4,10 @@
     "ai-assistant": {
       "hasChanged": false,
       "hash": "77bcce39563db564d6dca06b5bd0c6dbfb815be69d3fe389b089832c0d7c5ca2"
+    },
+    "delete-account": {
+      "hasChanged": false,
+      "hash": "b40ac381d55b3ad8d2648bfb1770d44cc50fb35577036e928c7befc50930da1f"
     }
   }
 }

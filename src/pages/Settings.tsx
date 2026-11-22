@@ -3,6 +3,7 @@ import { isValidCurrency } from "../lib/types";
 import CategoryManager from "./CategoryManager";
 import ScheduleEditor from "./settings/ScheduleEditor";
 import CashEditor from "./settings/CashEditor";
+import DangerZone from "./settings/DangerZone";
 import { useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 
@@ -124,6 +125,7 @@ export default function Settings() {
           {signingOut ? "Signing out…" : "Sign out"}
         </button>
       </div>
+      <DangerZone />
     </div>
   );
 }

@@ -56,6 +56,13 @@ Do not put secrets in `VITE_*` variables. Any variable bundled by a frontend bui
 - AI cannot mutate financial records or initiate payments in the MVP.
 - Explain uncertainty and do not present output as regulated financial, investment, tax, or legal advice.
 - Implemented 2026-11-22 (ai-assistant Edge Function): JWT verified twice (gateway `verify_jwt` plus `auth.getUser()` in the function); all database reads run under the caller's own token via RLS — the service-role key is never used for user data. Category/bill names sent to the provider are length-bounded (60 chars) with control characters and code-fence markers stripped, then passed inside `=== USER DATA START/END ===` markers the system prompt declares as untrusted data. No transaction descriptions leave the server. The model reply is returned as a JSON string and rendered as plain text, never HTML. Errors return generic messages; specifics go to the server console only. Per-user rate limit of 10 requests/minute with a distinct, non-revealing 429 message.
+- Implemented 2026-11-22 (delete-account Edge Function): the destructive path is server-only. The function verifies the caller's JWT twice (gateway `verify_jwt` plus `auth.getUser()`), takes the target user id exclusively from the verified token, and performs the deletion with `auth.admin.deleteUser` using the service-role key held in server-side Deno env — the key never reaches the browser and is never logged. The client must first re-authenticate (password re-entry producing a fresh session), so possession of a stale token alone is insufficient. Deletion cascades through the schema's own `ON DELETE CASCADE` foreign keys; one user's deletion cannot touch another user's rows, and no client input influences what is deleted. Sessions are best-effort revoked post-delete. Errors are generic; detail stays in server logs and never includes credentials or tokens.
+
+## Account deletion safeguards (2026-11-22)
+- Deletion is user-initiated only, from Settings, behind a permanent-deletion warning and a password re-entry step (re-authentication).
+- The frontend never sends a user id; the function derives it from the verified JWT, so cross-user deletion is structurally impossible.
+- Data removal uses the database's own cascade foreign keys rather than table-by-table client deletes, leaving no orphaned records; per-user default/system categories go with their owner, and other users' categories are untouched.
+- A failed deletion returns a generic error and explicitly tells the user nothing was deleted; the UI never shows success unless the server confirmed `{ deleted: true }`.
 
 ## Logging and incident response
 - Return generic client errors; keep safe diagnostic context server-side.

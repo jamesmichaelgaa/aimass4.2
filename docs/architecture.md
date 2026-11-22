@@ -83,6 +83,15 @@ Codex: repository-aware implementation and review
 - Treat model output as untrusted; render safely and never execute generated code or SQL: done — the reply is a JSON string rendered as text.
 - AI is read-only in MVP and cannot modify any financial records: enforced structurally — the function performs SELECT-only queries and takes no write path.
 
+### 4.6 Account Deletion Edge Function
+- Implemented 2026-11-22 as `delete-account` (`supabase/functions/delete-account/`), deployed with `verify_jwt = true`.
+- Verify caller's Supabase JWT and derive user identity from verified claims: done — the gateway enforces the JWT, the function additionally verifies it via `auth.getUser()`, and the deleted user id is taken only from the verified token, never from the request body. A user therefore can only ever delete their own account; cross-user deletion is structurally impossible.
+- Re-authentication happens in the client before the call: the user re-enters their password and signs in again; the fresh session's token is what the function receives. A stolen idle session alone is not enough to destroy an account.
+- The deletion itself uses the Supabase Admin API (`auth.admin.deleteUser`) with the service-role key read from Deno.env on the server — the key is never exposed to the frontend, logged, or included in responses.
+- Data deletion relies on the schema's own foreign keys: every user-owned table (`profiles`, `categories`, `transactions`, `budgets`, `cash_positions`, `income_schedules`, `recurring_bills`, `bill_payments`) has `user_id REFERENCES auth.users(id) ON DELETE CASCADE`, so deleting the auth user removes all of that user's rows atomically in one database-enforced cascade. Cross-table RESTRICT FKs (transactions→categories, budgets→categories, recurring_bills→categories, bill_payments→transactions/recurring_bills) reference rows belonging to the same user, so they never block the cascade. Categories are per-user rows (including each user's `is_system` defaults); deleting a user removes their copies and leaves every other user's categories intact. No views or materialized views exist that could be orphaned.
+- After the admin delete the function best-effort revokes the user's refresh tokens (`auth.admin.signOut`); failure there is logged and non-fatal because the user row no longer authorizes anything.
+- Responses are generic; detail goes to the console only.
+
 ## 5. Key data flow
 1. User authenticates with Supabase Auth.
 2. Trusted account initialization creates the user's profile and default categories.
