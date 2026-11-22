@@ -26,15 +26,25 @@ Do not put secrets in `VITE_*` variables. Any variable bundled by a frontend bui
 - Never paste secrets into chat, prompts, issues, PRs, screenshots, or documentation.
 - If a secret is exposed, rotate/revoke it immediately; investigate history and downstream usage.
 
-## Database and API security
-- Enable RLS on all user-owned tables before adding real data.
-- Policies must scope operations to the verified authenticated user.
-- Derive user identity from the verified Supabase JWT, never from a request body field.
-- Validate input on server/database boundaries.
-- Use parameterized queries; do not concatenate user input into SQL.
-- Apply request size limits, rate limits, and AI usage controls.
-- Keep service-role usage inside trusted server functions and use it only when strictly required.
-- Marking a recurring bill paid and linking/creating its expense must be atomic and protected against duplicate occurrence records.
+## Database authorization and RLS
+- Enable RLS on every user-owned table before adding real data.
+- Use owner-scoped policies: `user_id = (select auth.uid())` for owned records and `id = (select auth.uid())` for profiles.
+- Derive identity from the verified Supabase JWT; never trust a user ID supplied in a request body or query parameter.
+- Review SQL grants as well as RLS policies. RLS does not grant table privileges by itself.
+- Deny direct client writes to `bill_payments`; use only the dedicated atomic payment function.
+- Default categories are user-owned rows, not globally shared records.
+- Validate category ownership and category kind for transactions, budgets, and bills.
+- Validate that bill-payment records, bills, and linked expense transactions belong to the same user.
+- Use constraints, composite foreign keys, and narrowly scoped database functions/triggers for cross-table integrity.
+- Use a hardened `SECURITY DEFINER` function only when necessary: fix its `search_path`, schema-qualify objects, derive identity from `auth.uid()`, validate ownership, avoid dynamic SQL, and grant execution narrowly.
+- See `docs/database-schema.md` and `docs/sql-migration-plan.md` for the approved schema and policy model.
+
+## Database operations
+- Use separate development and production Supabase projects when practical.
+- Never commit database passwords, access tokens, service-role keys, or local Supabase secret files.
+- Apply reviewed migrations through a controlled workflow; do not edit production schema manually as the normal process.
+- Back up production data and document recovery procedures before launch.
+- Do not log secrets, access tokens, raw request headers, or unnecessary financial details.
 
 ## AI privacy and prompt safety
 - Send only minimum necessary aggregates/records to answer the user's current request.
@@ -47,6 +57,5 @@ Do not put secrets in `VITE_*` variables. Any variable bundled by a frontend bui
 - Explain uncertainty and do not present output as regulated financial, investment, tax, or legal advice.
 
 ## Logging and incident response
-- Do not log secrets, access tokens, raw request headers, or unnecessary financial details.
 - Return generic client errors; keep safe diagnostic context server-side.
 - On suspected exposure: stop use, rotate credentials, review audit/history, revoke sessions/tokens if applicable, and document remediation.
