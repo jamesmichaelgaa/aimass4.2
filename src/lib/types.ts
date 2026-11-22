@@ -181,6 +181,22 @@ export function parseNonNegativeAmount(raw: string): number | null {
   return value;
 }
 
+// Exact decimal string for amounts that may be zero (cash position allows 0),
+// mirroring parseAmountToDecimalString without its zero rejection.
+export function parseNonNegativeDecimalString(raw: string): string | null {
+  const trimmed = raw.trim().replace(/,/g, "");
+  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+    return null;
+  }
+  const [intPart, decPart] = trimmed.split(".");
+  if (!intPart || intPart.length > 12) {
+    return null;
+  }
+  const intNorm = intPart.replace(/^0+(?=\d)/, "");
+  const decNorm = (decPart ?? "").padEnd(2, "0").slice(0, 2);
+  return `${intNorm}.${decNorm}`;
+}
+
 export function isValidDate(raw: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     return false;

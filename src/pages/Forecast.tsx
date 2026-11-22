@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
-import { supabase } from "../lib/supabase";
 import { computeForecast, type ForecastResult, type ForecastUnavailable } from "../lib/forecast";
 import { addSignedAmounts } from "../lib/types";
 import { formatCurrency, type CashPosition, type IncomeSchedule } from "../lib/types";
+import { fetchActiveSchedule } from "../lib/schedule";
+import { fetchCashPosition, saveCashPosition, validateCashInput } from "../lib/cash";
 
 function todayIso(): string {
   const now = new Date();
@@ -33,19 +34,10 @@ export default function Forecast() {
     let cancelled = false;
     (async () => {
       try {
-        const [scheduleResult, cashResult] = await Promise.all([
-          supabase.from("income_schedules").select("*").eq("is_active", true).maybeSingle(),
-          supabase.from("cash_positions").select("*").maybeSingle(),
-        ]);
+        const [schedule, cash] = await Promise.all([fetchActiveSchedule(), fetchCashPosition()]);
         if (cancelled) {
           return;
         }
-        if (scheduleResult.error || cashResult.error) {
-          setLoad({ schedule: null, cash: null, error: "Could not load your forecast inputs. Please refresh to try again." });
-          return;
-        }
-        const schedule = (scheduleResult.data as IncomeSchedule | null) ?? null;
-        const cash = (cashResult.data as CashPosition | null) ?? null;
         setLoad({ schedule, cash, error: null });
         if (cash) {
           setAsOf(cash.as_of_date);
@@ -98,40 +90,25 @@ export default function Forecast() {
       return;
     }
     setSaveMessage(null);
-    const trimmed = amount.trim().replace(/,/g, "");
-    if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
-      setSaveMessage({ kind: "error", text: "Enter a valid amount with up to two decimals (for example 8500 or 8500.50)." });
+    const validated = validateCashInput(amount, asOf);
+    if (!validated.ok) {
+      setSaveMessage({ kind: "error", text: validated.errors.amount ?? validated.errors.date ?? "Check the values and try again." });
       return;
     }
-    const iso = asOf.trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-      setSaveMessage({ kind: "error", text: "Enter the date the balance was accurate, for example 2026-11-22." });
-      return;
-    }
-    const [intPart, decPart] = trimmed.split(".");
-    const normalized = `${intPart}.${(decPart ?? "").padEnd(2, "0").slice(0, 2)}`;
     setSaving(true);
-    const { error } = await supabase.from("cash_positions").upsert(
-      { amount: normalized, as_of_date: iso },
-      { onConflict: "user_id" }
-    );
+    const saveError = await saveCashPosition(validated.amount, validated.asOfDate);
     setSaving(false);
-    if (error) {
-      setSaveMessage({ kind: "error", text: "Could not save your cash position. Please try again." });
+    if (saveError) {
+      setSaveMessage({ kind: "error", text: saveError });
       return;
     }
     setSaveMessage({ kind: "success", text: "Cash position saved — forecast recalculated." });
-    const fresh = await Promise.all([
-      supabase.from("income_schedules").select("*").eq("is_active", true).maybeSingle(),
-      supabase.from("cash_positions").select("*").maybeSingle(),
-    ]);
-    if (fresh[0].error || fresh[1].error) {
+    try {
+      const [schedule, cash] = await Promise.all([fetchActiveSchedule(), fetchCashPosition()]);
+      setLoad({ schedule, cash, error: null });
+    } catch {
       setSaveMessage({ kind: "error", text: "Saved, but the forecast could not be refreshed. Please reload the page." });
-      return;
     }
-    const schedule = (fresh[0].data as IncomeSchedule | null) ?? null;
-    const cash = (fresh[1].data as CashPosition | null) ?? null;
-    setLoad({ schedule, cash, error: null });
   }
 
   if (load === null) {

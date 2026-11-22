@@ -1,6 +1,8 @@
 import { useAuth } from "../lib/auth";
 import { isValidCurrency } from "../lib/types";
 import CategoryManager from "./CategoryManager";
+import ScheduleEditor from "./settings/ScheduleEditor";
+import CashEditor from "./settings/CashEditor";
 import { useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 
@@ -110,6 +112,8 @@ export default function Settings() {
           </div>
         </form>
       </div>
+      <ScheduleEditor />
+      <CashEditor />
       <CategoryManager />
       <div className="card">
         <h2>Account</h2>
