@@ -11,6 +11,7 @@ import Settings from "./pages/Settings";
 import Transactions from "./pages/Transactions";
 import LogIn from "./pages/LogIn";
 import SignUp from "./pages/SignUp";
+import ResetPassword from "./pages/ResetPassword";
 import OnboardingProfile from "./pages/onboarding/ProfileStep";
 import OnboardingSalary from "./pages/onboarding/SalaryStep";
 import OnboardingCash from "./pages/onboarding/CashStep";
@@ -96,6 +97,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/login" element={status === "signed-out" || comingFromEmailLink ? <LogIn /> : <Navigate to="/" replace />} />
           <Route path="/signup" element={status === "signed-out" ? <SignUp /> : <Navigate to="/" replace />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route element={<OnboardingLayout />}>
             <Route path="/onboarding/profile" element={<OnboardingProfile />} />
             <Route path="/onboarding/salary" element={<OnboardingSalary />} />

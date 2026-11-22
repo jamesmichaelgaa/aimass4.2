@@ -91,6 +91,9 @@ If there is insufficient information, the assistant should say what is missing a
 - If a session expires, preserve no sensitive unsaved data in URLs; ask the user to sign in again.
 - Sign out clears the local session.
 - Password recovery uses the Supabase Auth recovery flow and configured redirect URLs.
+- "Forgot password?" on the sign-in page sends the recovery email to `<app-origin>/reset-password`, where the user sets a new password using the recovery session Supabase creates.
+- Supabase Dashboard → Authentication → URL Configuration must allow both `<app-origin>/reset-password` (recovery) and `<app-origin>/login` (signup confirmation) as redirect URLs; without them the emailed links cannot complete.
+- Expired, reused, or invalid recovery links show a "reset link not usable" state with a path back to sign-in; the password change only ever happens through the authenticated `updateUser` call.
 
 ## 9. Empty, loading, and error states
 - New user: show onboarding/setup guidance, not fabricated sample financial data.
