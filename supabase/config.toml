@@ -1,0 +1,4 @@
+project_id = "aimass"
+
+[functions.ai-assistant]
+verify_jwt = true

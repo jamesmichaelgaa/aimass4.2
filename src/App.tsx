@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import Bills from "./pages/Bills";
 import Budgets from "./pages/Budgets";
 import Forecast from "./pages/Forecast";
+import Assistant from "./pages/Assistant";
 import Settings from "./pages/Settings";
 import Transactions from "./pages/Transactions";
 import LogIn from "./pages/LogIn";
@@ -79,6 +80,9 @@ function AppRoutes() {
             <NavLink to="/forecast" className={({ isActive }) => (isActive ? "active" : "")}>
               Forecast
             </NavLink>
+            <NavLink to="/assistant" className={({ isActive }) => (isActive ? "active" : "")}>
+              AI Assistant
+            </NavLink>
             <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
               Settings
             </NavLink>
@@ -103,6 +107,7 @@ function AppRoutes() {
             <Route path="/budgets" element={<Budgets />} />
             <Route path="/bills" element={<Bills />} />
             <Route path="/forecast" element={<Forecast />} />
+            <Route path="/assistant" element={<Assistant />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

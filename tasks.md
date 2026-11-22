@@ -80,16 +80,22 @@ Implemented on the existing recurring_bills and bill_payments tables (no migrati
 Verification: `npm run typecheck` and `npm run build` pass. STRUCTURAL checks only, performed live: RPC signature and body inspected (ownership check, active check, occurrence-order check, prior-payment check, expense-category validation, atomic insert/update); unique one-payment-per-occurrence index confirmed; recurring_bills frequency CHECK allows exactly the four supported values; category FK enforces ownership and the assert-category-expense trigger blocks income categories. NOT yet exercised at runtime: actual mark-paid call (expense creation, due-date advancement, clamping), duplicate-payment rejection against a real session, edit flows, and cross-user RLS isolation — these need a signed-in browser session or scripted auth client; do not treat as complete until then.
 
 ## Phase 4 — AI assistant
-- [ ] Create authenticated Supabase Edge Function.
-- [ ] Store OpenAI API key as a Supabase Edge Function secret.
-- [ ] Retrieve only minimal, authenticated user-scoped summaries.
-- [ ] Implement spending insights.
-- [ ] Implement budget and savings recommendations.
-- [ ] Implement explanations of deterministic cash-flow forecasts.
-- [ ] Implement conversational budgeting Q&A.
-- [ ] Add rate limits, usage controls, and safe error handling.
-- [ ] Keep AI read-only; no autonomous record changes.
-- [ ] Test prompt injection in transaction notes and malformed requests.
+- [x] Create authenticated Supabase Edge Function. (2026-11-22: `ai-assistant` deployed, `verify_jwt = true`; JWT also verified in-function via `auth.getUser()`; all data reads run under the caller's token so RLS scopes them; service-role key never used for user data.)
+- [x] Store OpenAI API key as a Supabase Edge Function secret. (2026-11-22: the function reads `OPENAI_API_KEY` from the Edge Function secret store at call time and returns a generic 503 when it is absent. The key itself is NOT yet set in this project — the assistant replies "The AI assistant is not configured yet" until it is added; see the Phase 4 status note.)
+- [x] Retrieve only minimal, authenticated user-scoped summaries. (Aggregates only: month totals, top categories with shares, budget progress, active bills, schedule, cash position. No raw transaction descriptions are sent.)
+- [x] Implement spending insights. (Assistant page "Spending insights" quick task + free-form chat; grounded in application-computed aggregates.)
+- [x] Implement budget and savings recommendations. ("Budget & savings ideas" quick task + chat; budget progress is application-calculated; prompt forbids guaranteed-savings claims.)
+- [ ] Implement explanations of deterministic cash-flow forecasts. (Prompt/context layer implemented in the function, but wiring the verified Phase 3 forecast output in is DISABLED until the Phase 3 forecast runtime verification passes, per the phase requirement.)
+- [x] Implement conversational budgeting Q&A. (Assistant page chat with suggested prompts; generic errors, retry state.)
+- [x] Add rate limits, usage controls, and safe error handling. (10 req/min per user, 2000-char message cap, 6-turn history cap, 700-token completion cap, 45s upstream timeout, generic error messages with server-side console detail.)
+- [x] Keep AI read-only; no autonomous record changes. (Structurally: SELECT-only queries in the function; no write path exists. The system prompt also instructs the model to refuse change requests and direct users to the app pages.)
+- [ ] Test prompt injection in transaction notes and malformed requests. (Defenses implemented — sanitization, fence-marking, instruction-treatment rules; adversarial runtime tests still PENDING and listed in the Phase 4 status note.)
+
+### Phase 4 status (2026-11-22): AI assistant implemented, pending key + runtime tests
+Implemented: authenticated `ai-assistant` Edge Function (deployed, ACTIVE, JWT verified) with user-scoped aggregate context, strict read-only system prompt, prompt-injection defenses, per-user rate limiting, token/size caps, and safe generic errors; `Assistant` page with chat, suggested prompts, quick-task cards (insights, recommendations), typing indicator, error+retry states, "AI-generated" labelling, and mobile-responsive styles wired into nav as "AI Assistant". Money handling: aggregates are computed with integer-cent arithmetic on the server from `numeric(14,2)` values; no floats are introduced.
+Verification (structural, done): frontend build contains no "openai", "OPENAI_API_KEY", "sk-proj", or service-role strings (scanned the emitted bundle). Unauthenticated and anon-key calls to the deployed function return 401 (probed live: no token → 401; anon key as token → 401 "Sign in to use the assistant."). Function is listed ACTIVE with `verifyJWT: true`.
+Verification (runtime, PENDING — needs a signed-in session and an OPENAI_API_KEY secret): real chat round-trip with actual data; 429 rate-limit behavior; prompt-injection attempts inside transaction descriptions/category names; user A vs user B isolation with real sessions; malformed-payload probes (oversized message, bad JSON, wrong roles). No AI response ever mutates records (structural), but end-to-end confirmation requires the runtime pass above.
+Known limitations: rate-limit buckets are in-memory (per-instance; reset on redeploy — documented, acceptable for MVP); forecast explanations intentionally disabled until Phase 3 runtime verification completes.
 
 ## Phase 5 — Quality and security
 - [ ] Unit tests for money, budget, recurrence, and forecast calculations.

@@ -91,6 +91,19 @@ The MVP assistant is read-only. Any future write-capable workflow requires a sep
 - Never commit secrets or place them in logs.
 - Keep Supabase service-role credentials out of the client.
 - See docs/security.md.
+- Implemented 2026-11-22: the assistant runs as the `ai-assistant` Supabase Edge Function (`supabase/functions/ai-assistant/`), deployed with `verify_jwt = true` (`supabase/config.toml`). The OpenAI key is read from the Edge Function secret store at call time (`Deno.env.get("OPENAI_API_KEY")`); the frontend bundle was scanned and contains no OpenAI strings. If the secret is absent, the function returns a 503 with a generic message — it never degrades into a non-AI fallback that could leak configuration state.
+
+## 9a. Implemented request flow (2026-11-22)
+1. The client (`src/lib/aiClient.ts`) POSTs `{ message, history[] }` with the user's Supabase access token. No user id is sent; identity is derived server-side.
+2. The function (`supabase/functions/ai-assistant/index.ts`) verifies the JWT with `auth.getUser(token)` and builds a Supabase client whose Authorization header carries the caller's token, so every query is RLS-scoped to that user (the service-role key is never used for user data).
+3. Per-user rate limit: 10 requests per rolling 60 seconds (in-memory). Message ≤ 2000 chars; up to 6 history turns are accepted and only `user`/`assistant` roles pass validation. Completion is capped at 700 tokens with a 45-second upstream timeout.
+4. `context.ts` gathers aggregates only (month income/expenses/net for this and last month, top expense categories with shares, budget progress, active bills, schedule, cash position). No raw transaction descriptions are sent. Category and bill names are length-bounded (60 chars) and control characters/fence markers are stripped so they cannot forge the data-fence.
+5. The context is wrapped in explicit `=== USER DATA START/END ===` markers declared as untrusted data in the system prompt; the prompt forbids revealing itself, forbids non-budgeting topics, forbids recalculation of forecast figures, and forbids guaranteeing outcomes.
+6. The reply is returned as a JSON string and rendered as plain text (never HTML) in the Assistant page.
+7. Errors are generic; the specific cause goes to the function console only. Provider 429/5xx map to a distinct safe "service busy" message.
+
+## 9b. Forecast explanations status
+The deterministic forecast must be computed and verified server-side before the assistant may explain it. The deployed function reserves a `forecast` block in the context schema and includes it in the prompt only when populated. Wiring the verified Phase 3 forecast output into that block is the remaining step and stays disabled until the Phase 3 forecast runtime verification (docs/salary-reconciliation.md test contract) passes; until then the Assistant page offers insights, recommendations, and chat, and the response payload's `forecastAvailable` flag is `false`.
 
 ## 10. Acceptance tests
 - Unauthenticated requests are rejected.

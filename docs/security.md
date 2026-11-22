@@ -55,6 +55,7 @@ Do not put secrets in `VITE_*` variables. Any variable bundled by a frontend bui
 - AI may provide spending insights, budget/savings recommendations, forecast explanations, and conversational budgeting Q&A only.
 - AI cannot mutate financial records or initiate payments in the MVP.
 - Explain uncertainty and do not present output as regulated financial, investment, tax, or legal advice.
+- Implemented 2026-11-22 (ai-assistant Edge Function): JWT verified twice (gateway `verify_jwt` plus `auth.getUser()` in the function); all database reads run under the caller's own token via RLS — the service-role key is never used for user data. Category/bill names sent to the provider are length-bounded (60 chars) with control characters and code-fence markers stripped, then passed inside `=== USER DATA START/END ===` markers the system prompt declares as untrusted data. No transaction descriptions leave the server. The model reply is returned as a JSON string and rendered as plain text, never HTML. Errors return generic messages; specifics go to the server console only. Per-user rate limit of 10 requests/minute with a distinct, non-revealing 429 message.
 
 ## Logging and incident response
 - Return generic client errors; keep safe diagnostic context server-side.

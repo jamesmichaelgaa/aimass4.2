@@ -73,14 +73,15 @@ Codex: repository-aware implementation and review
 - AI may explain the result but cannot recalculate, overwrite, or invent authoritative amounts.
 
 ### 4.5 AI Edge Function
-- Verify caller's Supabase JWT and derive user identity from verified claims.
-- Validate payload, enforce request limits, and rate-limit AI usage.
-- Retrieve only minimal data belonging to the authenticated user.
-- Send only relevant summaries to OpenAI; never send credentials, access tokens, or unnecessary identifiers.
-- Support: spending insights, budget/savings recommendations, forecast explanations, and conversational budgeting Q&A.
-- Treat transaction notes and other user-controlled text as untrusted content.
-- Treat model output as untrusted; render safely and never execute generated code or SQL.
-- AI is read-only in MVP and cannot modify any financial records.
+- Implemented 2026-11-22 as `ai-assistant` (`supabase/functions/ai-assistant/`), deployed with `verify_jwt = true`.
+- Verify caller's Supabase JWT and derive user identity from verified claims: done — the gateway enforces the JWT, the function additionally verifies it via `auth.getUser()` and reads data with a client that carries the caller's token, so RLS scopes every read to the verified user. The service-role key is not used for user data.
+- Validate payload, enforce request limits, and rate-limit AI usage: done — schema/type validation, 2000-char message cap, 6-turn history cap, 700-token completion cap, 45s upstream timeout, 10 requests/minute per user (in-memory; per-instance, reset on redeploy/scale).
+- Retrieve only minimal data belonging to the authenticated user: done — aggregates only (month totals, top categories, budget progress, active bills, schedule, cash position); no raw transaction descriptions are sent to the provider.
+- Send only relevant summaries to OpenAI; never send credentials, access tokens, or unnecessary identifiers: done.
+- Support: spending insights, budget/savings recommendations, forecast explanations, and conversational budgeting Q&A: insights, recommendations, and Q&A are live behind the Assistant page; forecast explanations are implemented end-to-end at the prompt layer but remain disabled until the Phase 3 forecast runtime verification passes (see docs/ai-agent-spec.md §9b).
+- Treat transaction notes and other user-controlled text as untrusted content: done — names are length-bounded and sanitized, data is fence-delimited, and the system prompt declares the fence as data.
+- Treat model output as untrusted; render safely and never execute generated code or SQL: done — the reply is a JSON string rendered as text.
+- AI is read-only in MVP and cannot modify any financial records: enforced structurally — the function performs SELECT-only queries and takes no write path.
 
 ## 5. Key data flow
 1. User authenticates with Supabase Auth.
