@@ -1,35 +1,46 @@
 # aimass4.2
 
-AI-assisted personal budgeting application.
+AI-assisted personal budgeting application for Filipino employees and young professionals with regular monthly or biweekly income.
 
-## Purpose
-aimass4.2 helps users record income and expenses, manage budgets and savings goals, and understand their spending with an AI budgeting assistant.
+## Problem
+People can struggle to monitor daily expenses, remember recurring bills, and make their money last until payday. aimass4.2 combines manual expense tracking, budgets, recurring bill reminders, payday forecasting, and AI-assisted spending insights.
 
-## Planned stack
-- **Frontend:** React + TypeScript (generated and iterated with Bolt)
-- **Backend and database:** Supabase (PostgreSQL, Auth, Row Level Security, Edge Functions)
-- **AI:** OpenAI API called only from a trusted server-side function
-- **Source control:** GitHub
-- **AI-assisted engineering:** Codex
+## MVP highlights
+- Manual income and expense tracking.
+- Monthly budgets and category spending limits.
+- Recurring bill tracking and in-app reminders.
+- Payday/cash-flow forecast using user-entered information.
+- AI spending insights and budget/savings recommendations.
+- No bank or e-wallet integrations in the MVP.
 
-The exact dependency versions and application commands will be documented after the initial Bolt scaffold is created.
+## Planned technology
+- **Frontend and hosting:** Bolt, React, TypeScript, Vite.
+- **Backend and database:** Supabase PostgreSQL, Auth, Row Level Security, Edge Functions.
+- **AI:** OpenAI API called from a server-side Edge Function.
+- **Source control:** GitHub.
+- **AI-assisted development:** Codex.
+- **CI:** GitHub Actions.
 
 ## Documentation
 - [Product specification](spec.md)
 - [Agent instructions](AGENTS.md)
-- [Architecture](docs/architecture.md)
-- [Database schema](docs/database-schema.md)
+- [Architecture notes](docs/architecture.md)
+- [Proposed database schema](docs/database-schema.md)
 - [Security policy](docs/security.md)
+- [Architecture decisions](docs/DECISIONS.md)
 - [Development tasks](tasks.md)
 
 ## Security
-Never commit real credentials. Use `.env.example` for placeholder variable names only. Keep private keys, API keys, passwords, service-role keys, and production connection strings in the appropriate secret manager. See [Security](docs/security.md).
+Never commit real credentials. Commit placeholder names only in `.env.example`. Keep OpenAI API keys, Supabase service-role keys, database passwords, and other private credentials in the appropriate secret manager. Never expose private secrets through frontend environment variables. Review [docs/security.md](docs/security.md).
 
 ## Development status
-**Planning / foundation.** The application scaffold, database migrations, tests, and deployment configuration are not yet implemented.
+**Documentation and planning.** The application scaffold, database migrations, automated tests, and live deployment have not yet been created.
 
 ## Getting started
-Setup instructions will be added after the frontend scaffold and Supabase project are established. Do not assume that a local environment is configured until the relevant steps have been completed and verified.
+Local setup instructions will be added after the initial Bolt scaffold is created and its actual package scripts and dependencies are known.
+
+## Product and pricing decisions
+Default currency is PHP and default timezone is Asia/Manila. A possible free/premium model and proposed ₱149/month premium price are discovery ideas only; pricing and feature gating are not committed.
 
 ## License
 Not yet selected.
