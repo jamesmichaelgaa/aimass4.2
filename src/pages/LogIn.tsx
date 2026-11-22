@@ -57,7 +57,9 @@ export default function LogIn() {
     setError(null);
     setSubmitting(true);
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim());
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/login`,
+      });
       if (resetError) {
         setError("Could not send the reset email. Please try again.");
         return;

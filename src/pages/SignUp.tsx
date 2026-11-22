@@ -40,6 +40,9 @@ export default function SignUp() {
       const { error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
       });
       if (signUpError) {
         if (signUpError.message.toLowerCase().includes("already registered")) {

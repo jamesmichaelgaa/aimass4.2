@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
 import ProtectedLayout from "./pages/ProtectedLayout";
@@ -29,6 +30,30 @@ function OnboardingLayout() {
 function AppRoutes() {
   const { status, signOut } = useAuth();
 
+  // Supabase email-confirmation and password-recovery links return here with
+  // the session in the URL fragment; detect it once and route to sign-in,
+  // where the session is picked up normally.
+  const [hashParams] = useState(() => new URLSearchParams(window.location.hash.replace(/^#/, "")));
+  const [searchParams] = useState(() => new URLSearchParams(window.location.search));
+  const comingFromEmailLink =
+    hashParams.get("type") === "email" ||
+    hashParams.get("type") === "recovery" ||
+    searchParams.get("type") === "email" ||
+    searchParams.get("type") === "recovery";
+  const [emailLinkHandled, setEmailLinkHandled] = useState(false);
+
+  useEffect(() => {
+    if (comingFromEmailLink && !emailLinkHandled) {
+      setEmailLinkHandled(true);
+      // supabase-js detects the URL session on load; clear the fragment after
+      // a short delay so a refresh doesn't reuse the one-time token.
+      const timer = setTimeout(() => {
+        history.replaceState(null, "", window.location.pathname);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [comingFromEmailLink, emailLinkHandled]);
+
   return (
     <div className="app-shell">
       {status === "ready" && (
@@ -49,7 +74,7 @@ function AppRoutes() {
       )}
       <main className={status === "ready" ? "app-main" : ""} style={status !== "ready" ? { flex: 1, display: "flex", flexDirection: "column" } : undefined}>
         <Routes>
-          <Route path="/login" element={status === "signed-out" ? <LogIn /> : <Navigate to="/" replace />} />
+          <Route path="/login" element={status === "signed-out" || comingFromEmailLink ? <LogIn /> : <Navigate to="/" replace />} />
           <Route path="/signup" element={status === "signed-out" ? <SignUp /> : <Navigate to="/" replace />} />
           <Route element={<OnboardingLayout />}>
             <Route path="/onboarding/profile" element={<OnboardingProfile />} />
