@@ -45,10 +45,19 @@ export default function SignUp() {
         },
       });
       if (signUpError) {
-        if (signUpError.message.toLowerCase().includes("already registered")) {
+        const message = signUpError.message.toLowerCase();
+        if (message.includes("already registered")) {
           setError("That email already has an account. Try signing in instead.");
+        } else if (message.includes("rate limit") || message.includes("too many")) {
+          setError("Too many attempts. Please wait a minute and try again.");
+        } else if (message.includes("password") && message.includes("least")) {
+          setError(signUpError.message);
+        } else if (message.includes("invalid") && message.includes("email")) {
+          setError("That email address doesn't look valid. Check it and try again.");
+        } else if (message.includes("signups not allowed")) {
+          setError("New signups are currently turned off in the project's authentication settings.");
         } else {
-          setError("Could not create your account. Please try again.");
+          setError(`Could not create your account: ${signUpError.message}`);
         }
         return;
       }
