@@ -205,7 +205,9 @@ export default function Bills() {
       return;
     }
     setPayError(null);
-    let amountOverride: string | null = null;
+    // Without the override tick, the bill's own amount is used — the RPC
+    // requires a positive amount (or a linked transaction), so it is always sent.
+    let amountOverride: string | null = payIntent.bill.amount;
     if (payUseOverride) {
       const parsed = parseAmountToDecimalString(payAmountOverride);
       if (!parsed) {
