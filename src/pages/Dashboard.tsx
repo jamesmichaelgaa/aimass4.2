@@ -406,14 +406,18 @@ export default function Dashboard() {
           </div>
 
           <div className="card">
-            <h2>Coming next</h2>
+            <h2>Getting started</h2>
             <p className="center-note" style={{ padding: "8px 0" }}>
-              Budgets, recurring bills, your payday forecast, and the AI assistant arrive in the next updates. Your
-              profile and salary schedule are saved.
+              {budgets !== null && budgets.length > 0 ? "You're set up. Add transactions to see budget progress and your forecast update." : "Add a budget, your recurring bills, or a cash position to unlock budget progress, reminders, and your payday forecast."}
             </p>
-            <Link to="/settings" className="button button-secondary">
-              Review your settings
-            </Link>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Link to="/transactions" className="button button-secondary">
+                Add a transaction
+              </Link>
+              <Link to="/assistant" className="button button-secondary">
+                Ask the AI assistant
+              </Link>
+            </div>
           </div>
           {user && !profile?.display_name && (
             <div className="alert alert-info">
