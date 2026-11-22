@@ -235,7 +235,21 @@ async function callOpenAI(apiKey: string, systemPrompt: string, userTurns: Array
       signal: controller.signal,
     });
     if (!response.ok) {
-      console.error(`openai request failed with status ${response.status}`);
+      // Log the status and the provider's own (sanitized) message so auth and
+      // quota failures are debuggable. The body is JSON-parsed and only the
+      // short error.message is kept; any key-like substring is redacted and
+      // the Authorization header and request body are never logged.
+      let providerMessage = "";
+      try {
+        const errorBody: unknown = await response.json();
+        const message = (errorBody as { error?: { message?: unknown } })?.error?.message;
+        if (typeof message === "string") {
+          providerMessage = message.slice(0, 200).replace(/sk-[A-Za-z0-9_-]{6,}/g, "sk-[redacted]");
+        }
+      } catch {
+        providerMessage = "(no JSON error body)";
+      }
+      console.error(`openai request failed with status ${response.status}: ${providerMessage}`);
       if (response.status === 429 || response.status >= 500) {
         throw new Error("PROVIDER_UNAVAILABLE");
       }
@@ -283,10 +297,20 @@ Deno.serve(async (request: Request): Promise<Response> => {
       return json(400, { error: "Write a question (up to 2000 characters) and try again." });
     }
 
-    const apiKey = Deno.env.get("OPENAI_API_KEY");
-    if (!apiKey) {
+    const rawKey = Deno.env.get("OPENAI_API_KEY");
+    if (!rawKey) {
       console.error("OPENAI_API_KEY secret is not configured");
       return json(503, { error: "The AI assistant is not configured yet. Please try again later." });
+    }
+    // Guard against common mis-pastes: surrounding whitespace, quoted values,
+    // or the whole "OPENAI_API_KEY=..." line stored as the secret value.
+    let apiKey = rawKey.trim().replace(/^"|"$/g, "");
+    if (/^OPENAI_API_KEY=/i.test(apiKey)) {
+      console.error("OPENAI_API_KEY secret appears to contain the variable name; using the value after the equals sign");
+      apiKey = apiKey.slice(apiKey.indexOf("=") + 1).trim();
+    }
+    if (!/^sk-/.test(apiKey)) {
+      console.error("OPENAI_API_KEY secret does not look like an OpenAI key (should start with sk-)");
     }
 
     const todayIso = new Date().toISOString().slice(0, 10);
