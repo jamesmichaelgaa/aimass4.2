@@ -1,77 +1,107 @@
 # Architecture Notes — aimass4.2
 
-## 1. Architectural overview
-The system uses a web client, Supabase as the managed backend, and a server-side AI integration.
+## 1. Product context
+aimass4.2 is an AI-assisted personal budgeting application for Filipino employees and young professionals with regular monthly or biweekly income. The MVP focuses on manual tracking, budgets, recurring bill reminders, payday forecasting, and AI spending insights. Bank/e-wallet integrations are excluded from MVP.
 
+## 2. System overview
 ```text
 User
   |
   v
-React + TypeScript web client (Bolt)
-  |                        |
-  | authenticated          | AI request (no provider key)
-  v                        v
-Supabase Auth         Supabase Edge Function
-  |                        |
-  v                        v
-PostgreSQL + RLS        OpenAI API
+Bolt-hosted React + TypeScript web application
+  |                         |
+  | Supabase session        | authenticated AI request
+  v                         v
+Supabase Auth          Supabase Edge Function
+  |                         |
+  v                         v
+PostgreSQL + RLS         OpenAI API
   |
-  v
-User-scoped financial data
+  +-- profiles and salary schedules
+  +-- income/expense transactions
+  +-- categories and budgets
+  +-- recurring bills and reminders
+  +-- forecast inputs/snapshots (if needed)
+  +-- savings goals (MVP scope subject to prioritization)
 
-GitHub: source control, documentation, migrations, tests, CI
-Codex: repository-aware implementation, review, and testing
+GitHub stores source, docs, migrations, tests, and CI.
+Codex implements/reviews code following AGENTS.md.
 ```
 
-## 2. Components
+## 3. Technology choices
+- **Frontend/hosting:** Bolt-generated React + TypeScript + Vite application; Bolt Hosting is the initial preferred deployment target for simplicity.
+- **Backend/database:** Supabase PostgreSQL, Auth, RLS, and Edge Functions.
+- **AI:** OpenAI API called only by a trusted server-side Edge Function.
+- **Source control:** GitHub is the source of truth.
+- **Engineering agent:** Codex follows AGENTS.md, adds tests, and reviews changes.
+- **CI:** GitHub Actions for lint, typecheck, tests, and build once scripts are established.
+
+## 4. Main components
 ### Web client
-- React + TypeScript.
-- Responsible for presentation, navigation, form validation for usability, and calling Supabase with the user's session.
-- Client validation is not a security boundary; enforce authorization and validation on the server/database.
-- No OpenAI secret or Supabase service-role credential in browser code.
+- Handles presentation, navigation, user input, and authenticated Supabase calls.
+- Displays transaction, budget, bill, and forecast information.
+- Client-side checks improve usability but are not security controls.
+- Never contains OpenAI API keys or Supabase service-role credentials.
 
-### Supabase
-- Auth provides user identity and sessions.
-- PostgreSQL stores profiles, categories, accounts (if enabled), transactions, budgets, savings goals, and contributions.
-- RLS policies isolate user-owned records using the authenticated identity.
-- Edge Functions validate bearer tokens and request payloads before performing privileged operations or calling external APIs.
-- Database migrations are committed under `supabase/migrations/`.
+### Supabase Auth and PostgreSQL
+- Auth establishes the user identity.
+- PostgreSQL stores user profiles, pay schedules, transactions, categories, budgets, recurring bills, and reminder state.
+- RLS enforces ownership at the database boundary.
+- Use migrations as the canonical schema history.
+- Store money as PostgreSQL numeric values.
 
-### OpenAI integration
-- Invoked only from a server-side Edge Function.
-- The function obtains the user's identity from a verified Supabase JWT, retrieves only relevant scoped records, minimizes/redacts context, enforces request limits, and calls the model using a secret stored in Supabase.
-- Model output is treated as untrusted text. Render safely; do not execute model-generated code or SQL.
-- MVP AI assistant is read-only.
+### Recurring bill and reminder processing
+- Store recurrence rule, next due date, amount, and status separately from paid transactions.
+- A bill becomes a paid expense only through an explicit user action or verified workflow.
+- Prevent duplicate expense creation when a bill is marked paid.
+- In-app reminders can be derived from upcoming due dates at read time for MVP; scheduled email/push delivery is a later enhancement unless specifically approved.
 
-### GitHub and Codex
-- GitHub is the canonical source of truth.
-- Changes should be committed in small, reviewable units.
-- Codex should follow `AGENTS.md`, inspect the codebase, add tests, and report verification.
-- CI should run lint, typecheck, tests, and build after the scaffold defines the appropriate scripts.
+### Payday forecast service
+- Calculate estimates using user-entered starting balance, salary schedule, recorded transactions, and upcoming recurring obligations through the next expected payday.
+- Clearly expose the date range and assumptions.
+- Keep calculation logic deterministic and testable; AI may explain the result but must not invent or replace numeric calculations.
+- Treat forecast output as an estimate, not a guaranteed balance.
 
-## 3. Data flow
-1. User signs in through Supabase Auth.
-2. Client obtains a Supabase session.
-3. Client reads/writes permitted user-owned rows; PostgreSQL RLS enforces ownership.
-4. For AI, client calls the Edge Function with the current access token and a narrowly scoped question/context request.
-5. Edge Function validates the token and input, determines user ID from the verified identity, retrieves only necessary user-owned summaries, and calls OpenAI.
-6. Function returns a constrained response. It does not write financial records in the MVP.
+### AI Edge Function
+- Verify the caller's Supabase JWT and derive user identity from it.
+- Validate request payload and rate-limit requests.
+- Retrieve only relevant user-scoped aggregates and records.
+- Minimize sensitive context before sending to OpenAI.
+- Keep provider key in Supabase Edge Function secrets.
+- Treat transaction notes and other user-controlled content as untrusted.
+- Return constrained explanatory text; never execute model-generated code or SQL.
+- MVP assistant is read-only and cannot mutate financial records.
 
-## 4. Key design decisions
-- PostgreSQL `numeric` for money values; avoid floating-point persistence.
-- Use ISO date values for transaction dates and a clearly defined timezone for display.
-- Use RLS as defense in depth, not client-side filters alone.
-- Prefer aggregate queries for dashboard summaries rather than downloading all transactions.
-- Keep AI requests server-side and read-only.
-- Use migrations for repeatable schema changes.
+## 5. Data flow
+1. User authenticates with Supabase Auth.
+2. Client reads/writes permitted records; PostgreSQL RLS enforces ownership.
+3. Transactions and budgets update dashboard summaries.
+4. Forecast logic combines manually entered balance, pay schedule, transactions, and upcoming bills for the selected forecast window.
+5. AI request is sent to an authenticated Edge Function.
+6. Function retrieves minimal relevant user data, calls OpenAI, and returns an explanation or recommendation.
+7. User remains in control of all changes.
 
-## 5. Operational concerns
-- Separate development and production Supabase projects when practical.
-- Store environment-specific secrets in platform secret managers.
-- Apply database migrations deliberately and back up production data before risky schema changes.
-- Add rate limiting and usage controls to AI endpoints.
-- Monitor errors without logging secrets or unnecessary financial details.
-- Configure CI after the actual frontend package scripts and tests exist.
+## 6. Security and privacy
+- Enable RLS for every user-owned table.
+- Do not trust client-provided user IDs.
+- Keep privileged keys and provider secrets server-side.
+- Do not put secrets in VITE_ variables.
+- Minimize data sent to AI; never send auth tokens or credentials.
+- Avoid logging transaction descriptions and sensitive financial details.
+- Test cross-user isolation and prompt-injection handling.
+- See docs/security.md.
 
-## 6. Deployment
-The initial target is Bolt Hosting for the web client. Supabase remains the managed backend. Production deployment requires configured environment variables, Supabase URL/auth settings, RLS policies, Edge Function secrets, and a smoke test against the published URL.
+## 7. Deployment and environments
+- Use a separate development Supabase project and production project when practical.
+- Bolt Hosting serves the web frontend.
+- Supabase hosts database, auth, and Edge Functions.
+- Configure public frontend environment variables separately from server-side secrets.
+- Apply migrations deliberately and verify RLS before real users enter data.
+- CI should run quality checks before changes are merged/deployed.
+
+## 8. Open technical decisions
+- Exact schedule model for monthly/biweekly payroll and edge cases around weekends/holidays.
+- Whether to persist forecast snapshots or calculate on demand.
+- Reminder delivery mechanism beyond in-app reminders.
+- Whether savings goals are included in MVP.
+- Whether PDF reports and premium subscription are launch requirements.
