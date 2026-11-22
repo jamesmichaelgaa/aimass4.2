@@ -25,15 +25,21 @@
 - [ ] Add GitHub Actions CI using actual package scripts.
 
 ## Phase 2 — Supabase foundation
-- [ ] Create a new Supabase development project.
+- [x] Create a new Supabase development project (Bolt-provisioned Supabase project in use).
 - [ ] Configure Auth providers and redirect URLs.
-- [ ] Create and commit SQL migrations.
-- [ ] Enable RLS on every user-owned table.
-- [ ] Add owner-scoped policies and validate foreign-key ownership.
-- [ ] Add indexes, constraints, and safe monetary data types.
-- [ ] Implement and test signup initialization.
-- [ ] Implement and test atomic bill-payment RPC.
+- [x] Create and commit SQL migrations (applied 2026-11-22 via the Supabase migration tool: 20261122000001 through 20261122000007; see note below).
+- [x] Enable RLS on every user-owned table.
+- [x] Add owner-scoped policies and validate foreign-key ownership (composite FKs: transactions same-owner/same-kind; budgets and bills same-owner; expense-kind validation triggers).
+- [x] Add indexes, constraints, and safe monetary data types (all money is numeric(14,2)).
+- [ ] Implement and test signup initialization (trigger created; testing pending).
+- [ ] Implement and test atomic bill-payment RPC (implemented as `mark_bill_occurrence_paid`; testing pending).
 - [ ] Test cross-user access isolation and direct-write denial.
+
+### Migration delivery note (deviation from ADR-004, approved 2026-11-22)
+The Supabase CLI is unsupported in this environment and files written to `supabase/migrations/` are not executed, so migrations were applied directly through the Supabase migration tool and are recorded in the database's migration history. The database record is the executable source of truth for the schema. Repository SQL files are not available as an executable artifact; document future schema changes as migrations applied through the same tool.
+
+### Salary reconciliation flag (Phase 3 prerequisite)
+The forecast's expected-vs-actual salary matching rule is application logic and was NOT implemented in these migrations. Define and test it before building the forecast feature (docs/sql-migration-plan.md section 9).
 
 ## Phase 3 — Core budgeting features
 - [ ] Profile, preferred currency, timezone, and cash position/as-of date.
