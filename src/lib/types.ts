@@ -122,6 +122,15 @@ export function sumAmounts(rows: Array<{ amount: string }>): string {
   return centsToDecimalString(cents);
 }
 
+// Adds signed amounts: positive strings add, "-x" strings subtract.
+export function addSignedAmounts(amounts: string[]): string {
+  let cents = 0n;
+  for (const amount of amounts) {
+    cents += amountToCents(amount);
+  }
+  return centsToDecimalString(cents);
+}
+
 // Difference of two decimal strings, exact (a - b).
 export function diffAmounts(a: string, b: string): string {
   return centsToDecimalString(amountToCents(a) - amountToCents(b));

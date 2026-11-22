@@ -5,6 +5,7 @@ import ProtectedLayout from "./pages/ProtectedLayout";
 import Dashboard from "./pages/Dashboard";
 import Bills from "./pages/Bills";
 import Budgets from "./pages/Budgets";
+import Forecast from "./pages/Forecast";
 import Settings from "./pages/Settings";
 import Transactions from "./pages/Transactions";
 import LogIn from "./pages/LogIn";
@@ -75,6 +76,9 @@ function AppRoutes() {
             <NavLink to="/bills" className={({ isActive }) => (isActive ? "active" : "")}>
               Bills
             </NavLink>
+            <NavLink to="/forecast" className={({ isActive }) => (isActive ? "active" : "")}>
+              Forecast
+            </NavLink>
             <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
               Settings
             </NavLink>
@@ -98,6 +102,7 @@ function AppRoutes() {
             <Route path="/transactions" element={<Transactions />} />
             <Route path="/budgets" element={<Budgets />} />
             <Route path="/bills" element={<Bills />} />
+            <Route path="/forecast" element={<Forecast />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

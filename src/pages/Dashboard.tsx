@@ -4,6 +4,7 @@ import { useAuth } from "../lib/auth";
 import { supabase } from "../lib/supabase";
 import { fetchMonthSummary, fetchTransactions } from "../lib/transactions";
 import { fetchBills, type RecurringBill } from "../lib/bills";
+import { computeForecast } from "../lib/forecast";
 import {
   budgetStatus,
   computeProgress,
@@ -48,6 +49,7 @@ export default function Dashboard() {
   const [upcomingBills, setUpcomingBills] = useState<RecurringBill[] | null>(null);
   const [billsError, setBillsError] = useState<string | null>(null);
   const [billsLoading, setBillsLoading] = useState(true);
+  const [endingCash, setEndingCash] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,6 +152,38 @@ export default function Dashboard() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [scheduleResult, cashResult] = await Promise.all([
+          supabase.from("income_schedules").select("*").eq("is_active", true).maybeSingle(),
+          supabase.from("cash_positions").select("*").maybeSingle(),
+        ]);
+        if (cancelled) {
+          return;
+        }
+        const schedule = (scheduleResult.data as IncomeSchedule | null) ?? null;
+        const cash = (cashResult.data as CashPosition | null) ?? null;
+        if (!schedule || !cash) {
+          setEndingCash(null);
+          return;
+        }
+        const result = await computeForecast(schedule, cash.amount, cash.as_of_date);
+        if (!cancelled) {
+          setEndingCash(result.ok ? result.estimatedEndingCash : null);
+        }
+      } catch {
+        if (!cancelled) {
+          setEndingCash(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const currency = profile?.preferred_currency ?? "PHP";
@@ -278,6 +312,23 @@ export default function Dashboard() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {endingCash !== null && (
+            <div className="card">
+              <div className="month-summary-head">
+                <h2>Forecast through your next payday</h2>
+                <Link to="/forecast" className="button button-secondary">
+                  View details
+                </Link>
+              </div>
+              <div className="stat-inline">
+                <span className="stat-label">Estimated cash on payday (estimate, not guaranteed)</span>
+                <span className={`stat-value ${endingCash.startsWith("-") ? "expense" : "income"}`}>
+                  {formatCurrency(endingCash, currency)}
+                </span>
               </div>
             </div>
           )}
