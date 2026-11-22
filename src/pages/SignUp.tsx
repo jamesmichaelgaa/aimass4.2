@@ -37,7 +37,7 @@ export default function SignUp() {
     }
     setSubmitting(true);
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
@@ -49,7 +49,9 @@ export default function SignUp() {
         if (message.includes("already registered")) {
           setError("That email already has an account. Try signing in instead.");
         } else if (message.includes("rate limit") || message.includes("too many")) {
-          setError("Too many attempts. Please wait a minute and try again.");
+          setError(
+            "Too many attempts. Wait a minute, then try again. Repeated attempts extend the wait."
+          );
         } else if (message.includes("password") && message.includes("least")) {
           setError(signUpError.message);
         } else if (message.includes("invalid") && message.includes("email")) {
@@ -59,6 +61,12 @@ export default function SignUp() {
         } else {
           setError(`Could not create your account: ${signUpError.message}`);
         }
+        return;
+      }
+      // When email confirmation is off, signUp returns an active session and
+      // the router sends the user straight to onboarding.
+      if (signUpData.session) {
+        navigate("/", { replace: true });
         return;
       }
       setCheckEmail(true);
