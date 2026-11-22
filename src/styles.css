@@ -694,3 +694,96 @@ h1, h2, h3 {
   font-size: 0.9rem;
   margin-bottom: 4px;
 }
+
+/* --- Budgets --- */
+
+.budget-month-picker {
+  min-width: 220px;
+  margin: 0;
+}
+
+.budget-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--ink-100);
+  overflow: hidden;
+  margin: 8px 0 6px;
+}
+
+.budget-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  background: var(--teal-600);
+  transition: width 0.3s ease;
+}
+
+.budget-bar.warning .budget-bar-fill {
+  background: var(--amber-600);
+}
+
+.budget-bar.over .budget-bar-fill {
+  background: var(--red-600);
+}
+
+.budget-figures {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+  color: var(--ink-700);
+}
+
+.budget-figures .over-text {
+  color: var(--red-600);
+  font-weight: 600;
+}
+
+.budget-figures .warn-text {
+  color: var(--amber-600);
+  font-weight: 600;
+}
+
+.budget-figures .ok-text {
+  color: var(--ink-500);
+}
+
+.budget-alert {
+  margin-top: 8px;
+}
+
+.budget-category-list {
+  display: grid;
+  gap: 18px;
+}
+
+.budget-category-row {
+  padding-bottom: 4px;
+}
+
+.budget-category-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.budget-category-head .category-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.over-text {
+  color: var(--red-600);
+  font-weight: 600;
+}
+
+.warn-text {
+  color: var(--amber-600);
+  font-weight: 600;
+}
+
+.ok-text {
+  color: var(--ink-500);
+}

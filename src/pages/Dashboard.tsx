@@ -4,6 +4,14 @@ import { useAuth } from "../lib/auth";
 import { supabase } from "../lib/supabase";
 import { fetchMonthSummary, fetchTransactions } from "../lib/transactions";
 import {
+  budgetStatus,
+  computeProgress,
+  fetchBudgets,
+  fetchExpenseTotals,
+  monthBounds,
+  type BudgetWithProgress,
+} from "../lib/budgets";
+import {
   formatCurrency,
   getMonthMeta,
   monthRange,
@@ -30,6 +38,7 @@ export default function Dashboard() {
   const [recent, setRecent] = useState<TransactionRow[] | null>(null);
   const [recentLoading, setRecentLoading] = useState(true);
   const [txError, setTxError] = useState<string | null>(null);
+  const [budgets, setBudgets] = useState<BudgetWithProgress[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,8 +84,21 @@ export default function Dashboard() {
   useEffect(() => {
     let cancelled = false;
     const range = monthRange(meta.ym);
-    Promise.all([fetchMonthSummary(range.start, range.end), fetchTransactions({ from: range.start, to: range.end, kind: null, categoryId: null })]).then(
-      ([summaryResult, txResult]) => {
+    const budgetRange = monthBounds(meta.ym);
+    Promise.all([
+      fetchMonthSummary(range.start, range.end),
+      fetchTransactions({ from: range.start, to: range.end, kind: null, categoryId: null }),
+      fetchBudgets(meta.ym).then(async (budgetResult) => {
+        if (budgetResult.error || budgetResult.budgets.length === 0) {
+          return { error: budgetResult.error, budgets: [] as BudgetWithProgress[] };
+        }
+        const expenses = await fetchExpenseTotals(budgetRange.start, budgetRange.end);
+        if (expenses.error) {
+          return { error: expenses.error, budgets: [] as BudgetWithProgress[] };
+        }
+        return { error: null, budgets: computeProgress(budgetResult.budgets, expenses) };
+      }),
+    ]).then(([summaryResult, txResult, budgetResult]) => {
         if (cancelled) {
           return;
         }
@@ -90,6 +112,7 @@ export default function Dashboard() {
         } else {
           setRecent(txResult.rows.slice(0, 5));
         }
+        setBudgets(budgetResult.error ? null : budgetResult.budgets);
         setSummaryLoading(false);
         setRecentLoading(false);
       }
@@ -181,6 +204,54 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+
+          {budgets !== null && budgets.length > 0 && (
+            <div className="card">
+              <div className="month-summary-head">
+                <h2>Budgets for {meta.label}</h2>
+                <Link to="/budgets" className="button button-secondary">
+                  Manage budgets
+                </Link>
+              </div>
+              <div className="budget-category-list">
+                {budgets.map((b) => {
+                  const status = budgetStatus(b);
+                  const pct = Math.min(999, Math.round(b.percentUsed * 10) / 10);
+                  return (
+                    <div key={b.id} className="budget-category-row">
+                      <div className="budget-category-head">
+                        <span className="category-name">{b.category_name ?? "Overall budget"}</span>
+                        <span className={status === "over" ? "over-text" : status === "warning" ? "warn-text" : "ok-text"}>
+                          {formatCurrency(b.spent, currency)} / {formatCurrency(b.limit_amount, currency)} · {pct}%
+                        </span>
+                      </div>
+                      <div
+                        className={`budget-bar ${status}`}
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Math.min(100, pct)}
+                        aria-label={`${b.category_name ?? "Overall"} budget used ${pct}%`}
+                      >
+                        <div className="budget-bar-fill" style={{ width: `${Math.min(100, pct)}%` }} />
+                      </div>
+                      {status === "over" && (
+                        <div className="alert alert-error budget-alert">
+                          {b.category_name ? `${b.category_name} budget exceeded` : "Overall budget exceeded"} —{" "}
+                          {formatCurrency(b.remaining.startsWith("-") ? b.remaining.slice(1) : "0", currency)} over.
+                        </div>
+                      )}
+                      {status === "warning" && (
+                        <div className="alert alert-info budget-alert">
+                          {b.category_name ? `${b.category_name} budget` : "Overall budget"} approaching the limit (80%+ used).
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="card">
             <div className="month-summary-head">

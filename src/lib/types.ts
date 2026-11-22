@@ -127,7 +127,7 @@ export function diffAmounts(a: string, b: string): string {
   return centsToDecimalString(amountToCents(a) - amountToCents(b));
 }
 
-function amountToCents(amount: string): bigint {
+export function amountToCents(amount: string): bigint {
   const negative = amount.startsWith("-");
   const unsigned = negative ? amount.slice(1) : amount;
   const [intPart, decPart] = unsigned.split(".");
@@ -137,7 +137,7 @@ function amountToCents(amount: string): bigint {
   return negative ? -cents : cents;
 }
 
-function centsToDecimalString(cents: bigint): string {
+export function centsToDecimalString(cents: bigint): string {
   const negative = cents < 0n;
   const abs = (negative ? -cents : cents).toString().padStart(3, "0");
   return `${negative ? "-" : ""}${abs.slice(0, abs.length - 2)}.${abs.slice(-2)}`;

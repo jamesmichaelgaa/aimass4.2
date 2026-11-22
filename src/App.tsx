@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes } from "react-r
 import { AuthProvider, useAuth } from "./lib/auth";
 import ProtectedLayout from "./pages/ProtectedLayout";
 import Dashboard from "./pages/Dashboard";
+import Budgets from "./pages/Budgets";
 import Settings from "./pages/Settings";
 import Transactions from "./pages/Transactions";
 import LogIn from "./pages/LogIn";
@@ -67,6 +68,9 @@ function AppRoutes() {
             <NavLink to="/transactions" className={({ isActive }) => (isActive ? "active" : "")}>
               Transactions
             </NavLink>
+            <NavLink to="/budgets" className={({ isActive }) => (isActive ? "active" : "")}>
+              Budgets
+            </NavLink>
             <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>
               Settings
             </NavLink>
@@ -88,6 +92,7 @@ function AppRoutes() {
           <Route element={<ProtectedLayout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/transactions" element={<Transactions />} />
+            <Route path="/budgets" element={<Budgets />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
