@@ -20,7 +20,7 @@ One profile per Supabase Auth user.
 - `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
 
-Create the profile through a trusted signup trigger or an idempotent server-side initialization flow. Do not allow a user to create or modify another user's profile. Currency is a display preference, not a conversion feature. For MVP, changing currency after financial records exist should be blocked or require an explicit data migration so historical amounts are not silently relabelled.
+Create the profile through a trusted signup trigger or an idempotent server-side initialization flow. Do not allow a user to create or modify another user's profile. Currency is a display preference, not a conversion feature. Per ADR-011 (2026-11-22): currency changes are allowed while no financial records exist and blocked once any financial records exist (transactions, bill payments, or budgets), so historical amounts are never silently relabelled. The currently applied trigger blocks ALL changes; a follow-up migration implementing the conditional rule is pending.
 
 ## 2. cash_positions
 

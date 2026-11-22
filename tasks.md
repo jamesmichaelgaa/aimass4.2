@@ -27,16 +27,20 @@
 ## Phase 2 — Supabase foundation
 - [x] Create a new Supabase development project (Bolt-provisioned Supabase project in use).
 - [ ] Configure Auth providers and redirect URLs.
-- [x] Create and commit SQL migrations (applied 2026-11-22 via the Supabase migration tool: 20261122000001 through 20261122000007; see note below).
+- [x] Create and commit SQL migrations (applied 2026-11-22 via the Supabase migration tool; exact applied SQL archived under docs/sql/migrations/ — see the implemented status section of docs/sql-migration-plan.md for the nine applied files and the seven logical changes).
 - [x] Enable RLS on every user-owned table.
 - [x] Add owner-scoped policies and validate foreign-key ownership (composite FKs: transactions same-owner/same-kind; budgets and bills same-owner; expense-kind validation triggers).
 - [x] Add indexes, constraints, and safe monetary data types (all money is numeric(14,2)).
-- [ ] Implement and test signup initialization (trigger created; testing pending).
-- [ ] Implement and test atomic bill-payment RPC (implemented as `mark_bill_occurrence_paid`; testing pending).
-- [ ] Test cross-user access isolation and direct-write denial.
+- [ ] Implement and test signup initialization (trigger deployed; runtime testing PENDING — do not mark complete until tests pass).
+- [ ] Implement and test atomic bill-payment RPC (implemented as `mark_bill_occurrence_paid`; runtime testing PENDING — do not mark complete until tests pass).
+- [ ] Test cross-user access isolation and direct-write denial (PENDING).
+- [ ] Apply currency-rule correction migration (allow currency change before financial records exist; block after — see note above).
 
 ### Migration delivery note (deviation from ADR-004, approved 2026-11-22)
-The Supabase CLI is unsupported in this environment and files written to `supabase/migrations/` are not executed, so migrations were applied directly through the Supabase migration tool and are recorded in the database's migration history. The database record is the executable source of truth for the schema. Repository SQL files are not available as an executable artifact; document future schema changes as migrations applied through the same tool.
+The Supabase CLI is unsupported in this environment and files written to `supabase/migrations/` are not executed, so migrations were applied directly through the Supabase migration tool and are recorded in the database's migration history. The exact applied SQL is archived under `docs/sql/migrations/` so GitHub remains the source of truth for project source, documentation, and migration SQL per ADR-004. Document future schema changes as migrations applied through the same tool, then archive the applied SQL here.
+
+### Currency rule correction (approved 2026-11-22, migration PENDING)
+The applied `profiles_enforce_currency_immutable` trigger blocks ALL preferred-currency changes. The approved rule is: allow currency changes before any financial records exist; block them once financial records exist (transactions, bill payments, or budgets present). This requires a follow-up migration that has NOT been applied yet — do not bundle it with unrelated changes. Until that migration is applied, all currency changes remain blocked.
 
 ### Salary reconciliation flag (Phase 3 prerequisite)
 The forecast's expected-vs-actual salary matching rule is application logic and was NOT implemented in these migrations. Define and test it before building the forecast feature (docs/sql-migration-plan.md section 9).

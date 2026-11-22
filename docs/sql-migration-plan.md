@@ -1,6 +1,6 @@
 # SQL Migration and RLS Plan — aimass4.2
 
-**Status:** Implementation blueprint only. No Supabase project has been created and no SQL migration has been executed. Translate this plan into reviewed, versioned migrations only after the plan is approved.
+**Status:** Implemented. All schema was applied to the Supabase development project on 2026-11-22 through the Supabase migration tool and is recorded in the database's migration history. The exact applied SQL is preserved in `docs/sql/migrations/` per ADR-004. See the "Implemented status" section near the end of this document for the applied file list, deviations from this plan, and remaining work.
 
 ## 1. Objectives
 - Create the approved eight-table MVP schema in dependency order.
@@ -145,3 +145,44 @@ Choose and test a reliable salary reconciliation key/rule before implementation.
 
 ## 11. Explicitly out of scope
 This stage does not create a Supabase project, write/apply executable SQL, add frontend code, configure OpenAI secrets, connect Bolt, or deploy the app. Those actions come after the implementation plan is reviewed and approved.
+
+---
+
+## Implemented status (2026-11-22)
+
+All schema was applied to the Supabase development project through the Supabase migration tool. The Supabase CLI is unsupported in this environment and files written to `supabase/migrations/` are not executed, so ADR-004 is preserved by archiving the exact applied SQL under `docs/sql/migrations/`. The database's migration history is the executable source of truth.
+
+### Applied migration files, in application order
+
+1. `20261122102842_20261122000001_extensions_and_helpers.sql.sql` — shared `set_updated_at()` trigger helper.
+2. `20261122102850_20261122000002_profiles_and_categories.sql.sql` — first version of the profiles/categories migration; superseded (kept in history).
+3. `20261122102910_20261122000002_profiles_and_categories.sql.sql` — corrected version; adds the `(user_id, id, kind)` unique index required by the transactions composite foreign key. Creates profiles, user-owned categories, signup trigger, default category seed, currency-immutable trigger.
+4. `20261122102921_20261122000003_financial_core.sql.sql` — cash positions, income schedules, transactions, budgets, recurring bills; partial unique indexes; composite foreign keys; expense-kind validation triggers.
+5. `20261122102933_20261122000004_bill_payments.sql.sql` — bill_payments table with occurrence/transaction uniqueness, RESTRICT references, `advance_due_date` recurrence helper, and the `mark_bill_occurrence_paid` SECURITY DEFINER RPC.
+6. `20261122102945_20261122000005_indexes_and_rls.sql.sql` — query and foreign-key indexes; full RLS policy set and grants; protected system categories; no-delete for bills with payment history; read-only bill_payments; no client INSERT/DELETE on profiles.
+7. `20261122103014_20261122000006_verification.sql.sql` — structural assertions confirming tables, RLS, policies, unique safeguards, triggers, RPC grants, and write denial on bill_payments.
+8. `20261122103040_20261122000001_extensions_and_helpers.sql.sql` — re-apply of migration 1 pinning `search_path` on `set_updated_at()`.
+9. `20261122103049_20261122000007_function_search_path_hardening.sql.sql` — pins `search_path` on remaining helper functions; fixes `advance_due_date` day clamping for short months.
+
+### Why nine files implement six planned logical migrations
+
+The plan defined six logical boundaries. During application, two migrations failed their first apply and were corrected and re-applied under the same logical change, and one additional hardening migration was added from the security advisor's findings:
+
+- Profiles/categories (planned file 2) failed first apply because the transactions composite foreign key needs a `(user_id, id, kind)` unique index on categories. The corrected version was applied under the same logical change; both versions remain in the migration history.
+- Extensions/helpers (planned file 1) was re-applied once to pin `set_updated_at()`'s `search_path` after the security advisor flagged mutable search paths.
+- File 9 in the list above (`function_search_path_hardening`) is an unplanned addition, closing the advisor's search-path findings on the remaining helper functions and fixing the day-clamping bug in `advance_due_date` for months shorter than 31 days.
+
+### Deviations from this plan
+
+- Migration delivery: applied through the Supabase migration tool rather than CLI-written files; approved as a conscious deviation from ADR-004's executable-file interpretation, with GitHub archiving the exact applied SQL.
+- Owner columns default to `auth.uid()` so client inserts that omit the owner still satisfy RLS.
+- Currency rule as implemented: `profiles_enforce_currency_immutable` blocks ALL preferred-currency changes. Corrected product rule (approved 2026-11-22): allow currency changes before any financial records exist; block them once financial records exist. A follow-up migration to implement the corrected rule is pending; it must not be bundled with unrelated changes.
+- Service-role grants for the AI Edge Function are deferred to Phase 4 (least privilege).
+- Recurrence advancement is implemented in the database only for the bill-payment path (`advance_due_date`); salary progression and forecast arithmetic remain application logic per ADR-005 and the forecast contract.
+
+### Pending work before frontend integration
+
+- Apply the currency-rule correction migration (allow changes before financial records exist, block after).
+- Runtime tests: signup initialization idempotency, atomic bill payment (including concurrent duplicates and rollback), cross-user RLS isolation, and direct-write denial on bill_payments.
+- Define and test the forecast salary reconciliation rule (section 9) before building the forecast feature.
+- GitHub Actions CI remains unconfigured until package scripts exist (Phase 1).

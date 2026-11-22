@@ -39,3 +39,7 @@ PDF report generation/export is post-MVP.
 ## ADR-010: Cash position and forecast
 **Status:** Accepted for MVP  
 User manually enters a cash position and the date it is accurate as of. The app estimates cash through the next payday using subsequent recorded transactions, expected salary, and unpaid bill occurrences. Forecasts must disclose assumptions and are not guaranteed balances.
+
+## ADR-011: Preferred currency change policy
+**Status:** Accepted (2026-11-22; corrects the MVP implementation)  
+Users may change their preferred currency only while they have no financial records (no transactions, bill payments, or budgets). Once any financial record exists, currency changes are blocked so historical amounts are never silently relabelled; a change would then require an explicit data migration. Note: the currently applied database trigger blocks ALL currency changes, including before any records exist. A follow-up migration implementing this ADR is pending and must not be bundled with unrelated changes.
