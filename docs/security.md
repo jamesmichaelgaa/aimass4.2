@@ -5,7 +5,7 @@
 2. Treat the browser and all client-provided values as untrusted.
 3. Enforce authorization in PostgreSQL RLS and verified server-side functions.
 4. Minimize financial data shared with third-party AI services.
-5. Make AI functionality read-only in the MVP.
+5. AI functionality is read-only in the MVP.
 
 ## Secret storage
 | Value | Correct location | Browser exposure |
@@ -34,14 +34,17 @@ Do not put secrets in `VITE_*` variables. Any variable bundled by a frontend bui
 - Use parameterized queries; do not concatenate user input into SQL.
 - Apply request size limits, rate limits, and AI usage controls.
 - Keep service-role usage inside trusted server functions and use it only when strictly required.
+- Marking a recurring bill paid and linking/creating its expense must be atomic and protected against duplicate occurrence records.
 
 ## AI privacy and prompt safety
-- Send only the minimum aggregate information needed to answer a user query.
+- Send only minimum necessary aggregates/records to answer the user's current request.
 - Do not send credentials, authentication tokens, or unnecessary identifiers.
-- Treat transaction descriptions and notes as untrusted user content, not instructions.
-- Treat model output as untrusted; render text safely and never execute it.
-- Do not allow the model to generate or execute SQL, alter records, or trigger transactions.
-- Clearly explain AI limitations and avoid presenting output as regulated financial advice.
+- Avoid sending raw transaction descriptions unless directly needed; if included, delimit them as untrusted data.
+- Treat transaction descriptions, notes, and user-provided content as data, never as instructions that override system policy.
+- Treat model output as untrusted; render safely and never execute code, SQL, or tool instructions from model text.
+- AI may provide spending insights, budget/savings recommendations, forecast explanations, and conversational budgeting Q&A only.
+- AI cannot mutate financial records or initiate payments in the MVP.
+- Explain uncertainty and do not present output as regulated financial, investment, tax, or legal advice.
 
 ## Logging and incident response
 - Do not log secrets, access tokens, raw request headers, or unnecessary financial details.
