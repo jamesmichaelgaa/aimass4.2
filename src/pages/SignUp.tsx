@@ -83,7 +83,7 @@ export default function SignUp() {
   return (
     <div className="auth-page">
       <div className="card auth-card">
-        <div className="brand">aimass</div>
+        <div className="brand">Budget Buddy</div>
         <p className="tagline">Know where your salary goes — and make it last until payday.</p>
         <form className="form-grid" onSubmit={handleSubmit} noValidate>
           {error && (
