@@ -24,7 +24,9 @@ const corsHeaders = {
 };
 
 const OPENAI_MODEL = "gpt-4o-mini";
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+// Base URL is configurable so OpenAI-compatible providers (e.g. Vocareum
+// learning gateways) work with the same code. Default is OpenAI's API.
+const OPENAI_BASE_URL = Deno.env.get("OPENAI_BASE_URL") ?? "https://api.openai.com/v1";
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_COMPLETION_TOKENS = 700;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -217,7 +219,7 @@ async function callOpenAI(apiKey: string, systemPrompt: string, userTurns: Array
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
   try {
-    const response = await fetch(OPENAI_URL, {
+    const response = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -310,7 +312,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
       apiKey = apiKey.slice(apiKey.indexOf("=") + 1).trim();
     }
     if (!/^sk-/.test(apiKey)) {
-      console.error("OPENAI_API_KEY secret does not look like an OpenAI key (should start with sk-)");
+      // Only a warning: OpenAI-compatible providers (Vocareum, Azure gateways,
+      // etc.) issue keys in other formats. A custom base URL makes this normal.
+      console.error(`OPENAI_API_KEY does not start with sk- (base URL: ${OPENAI_BASE_URL === "https://api.openai.com/v1" ? "OpenAI default" : "custom provider"})`);
     }
 
     const todayIso = new Date().toISOString().slice(0, 10);
