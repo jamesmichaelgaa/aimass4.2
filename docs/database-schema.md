@@ -1,10 +1,8 @@
 # Database Schema — aimass4.2
 
-**Status:** Proposed design, not yet implemented. Finalize after product scope review. All monetary values use PostgreSQL `numeric`, not floating-point types.
+**Status:** Proposed MVP schema; implement only through reviewed SQL migrations. All money uses PostgreSQL `numeric`, never floating-point types.
 
-## Core tables
-
-### profiles
+## 1. profiles
 - `id uuid primary key references auth.users(id) on delete cascade`
 - `display_name text nullable`
 - `preferred_currency text not null default 'PHP'`
@@ -12,27 +10,37 @@
 - `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
 
-### income_schedules
+## 2. cash_positions
+One manually maintained cash position for the MVP; this is not a live bank balance.
+- `id uuid primary key default gen_random_uuid()`
+- `user_id uuid not null unique references auth.users(id) on delete cascade`
+- `amount numeric(14,2) not null`
+- `as_of_date date not null`
+- `updated_at timestamptz not null default now()`
+The UI must label this as user-entered and show the as-of date.
+
+## 3. income_schedules
 - `id uuid primary key default gen_random_uuid()`
 - `user_id uuid not null references auth.users(id) on delete cascade`
 - `label text not null default 'Salary'`
 - `expected_amount numeric(14,2) not null check (expected_amount > 0)`
-- `frequency text not null check (frequency in ('weekly','biweekly','monthly'))`
+- `frequency text not null check (frequency in ('monthly','biweekly'))`
 - `next_payday date not null`
 - `is_active boolean not null default true`
 - `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
+Monthly schedules advance by calendar month; if a day does not exist in a month, use the last day of that month. Biweekly schedules advance by 14 days. Do not automatically adjust weekends or holidays in MVP.
 
-### categories
+## 4. categories
 - `id uuid primary key default gen_random_uuid()`
-- `user_id uuid nullable references auth.users(id) on delete cascade` (null may represent seeded global categories)
+- `user_id uuid nullable references auth.users(id) on delete cascade` (null may represent global seeded categories)
 - `name text not null`
 - `kind text not null check (kind in ('income','expense'))`
 - `is_system boolean not null default false`
 - `created_at timestamptz not null default now()`
-- Add constraints/indexes to prevent duplicate category names within a user's category scope.
+Use explicit uniqueness rules for user and global categories. System categories are read-only to end users.
 
-### transactions
+## 5. transactions
 - `id uuid primary key default gen_random_uuid()`
 - `user_id uuid not null references auth.users(id) on delete cascade`
 - `category_id uuid nullable references categories(id) on delete set null`
@@ -40,22 +48,20 @@
 - `amount numeric(14,2) not null check (amount > 0)`
 - `transaction_date date not null`
 - `description text nullable`
-- `recurring_bill_id uuid nullable` (FK added after recurring_bills table)
 - `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
-- Index by user_id and transaction_date.
-- Ensure referenced category and recurring bill belong to the same user.
+Add indexes for user_id + transaction_date. Validate that referenced category belongs to the user or is an allowed global category. Do not add a recurring bill link directly to transactions unless the chosen bill-payment model requires it.
 
-### budgets
+## 6. budgets
 - `id uuid primary key default gen_random_uuid()`
 - `user_id uuid not null references auth.users(id) on delete cascade`
 - `category_id uuid nullable references categories(id) on delete cascade` (null denotes overall budget)
-- `month date not null` (normalized to first day of month)
+- `month date not null` (normalize to first day of month)
 - `limit_amount numeric(14,2) not null check (limit_amount > 0)`
 - `created_at timestamptz not null default now()`
-- Unique user/category/month, including a deliberate uniqueness strategy for null category_id.
+Use a unique index/constraint that correctly handles null category_id (for example, partial unique indexes for overall and category budgets). Validate category ownership.
 
-### recurring_bills
+## 7. recurring_bills
 - `id uuid primary key default gen_random_uuid()`
 - `user_id uuid not null references auth.users(id) on delete cascade`
 - `category_id uuid nullable references categories(id) on delete set null`
@@ -66,58 +72,35 @@
 - `is_active boolean not null default true`
 - `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
-- Add indexes for user_id and next_due_date.
+In-app upcoming/overdue reminders are derived from active bills and due dates; no notification delivery table is required for MVP.
 
-### bill_payments (or a paid-occurrence ledger)
+## 8. bill_payments
+One row per paid occurrence, preventing duplicate payment handling.
 - `id uuid primary key default gen_random_uuid()`
 - `user_id uuid not null references auth.users(id) on delete cascade`
 - `recurring_bill_id uuid not null references recurring_bills(id) on delete cascade`
-- `transaction_id uuid nullable references transactions(id) on delete set null`
+- `transaction_id uuid not null references transactions(id) on delete restrict`
 - `due_date date not null`
 - `paid_at timestamptz not null default now()`
-- Unique recurring_bill_id + due_date to prevent duplicate payment records.
-- Ensure linked transaction belongs to the same user and is an expense.
+- Unique constraint on recurring_bill_id + due_date.
+Validate that bill, payment, and linked expense transaction all belong to the same user and that the transaction is an expense. Marking paid and linking/creating the expense must be atomic through a secure database function or equivalent transaction-safe operation.
 
-### savings_goals (optional MVP; confirm scope)
-- `id uuid primary key default gen_random_uuid()`
-- `user_id uuid not null references auth.users(id) on delete cascade`
-- `name text not null`
-- `target_amount numeric(14,2) not null check (target_amount > 0)`
-- `target_date date nullable`
-- `status text not null default 'active' check (status in ('active','completed','archived'))`
-- `created_at timestamptz not null default now()`
-- `updated_at timestamptz not null default now()`
+## 9. Optional savings goals
+Savings goal and contribution tables are not a committed MVP requirement. AI can provide savings recommendations using budgets and transaction data without storing a separate goal object. Add goal tables only if product scope is explicitly expanded.
 
-### savings_contributions (optional MVP; confirm scope)
-- `id uuid primary key default gen_random_uuid()`
-- `user_id uuid not null references auth.users(id) on delete cascade`
-- `goal_id uuid not null references savings_goals(id) on delete cascade`
-- `amount numeric(14,2) not null check (amount > 0)`
-- `contribution_date date not null`
-- `note text nullable`
-- `created_at timestamptz not null default now()`
+## 10. Forecast calculation inputs
+Calculate on demand for MVP using:
+- Cash position amount and as-of date.
+- Recorded income and expense transactions after the cash-position date and through the forecast cutoff.
+- Expected salary occurrences through the next payday using the active monthly/biweekly schedule.
+- Unpaid recurring bill occurrences due within the forecast period.
+Avoid double counting bill payments already represented by linked expense transactions. Do not persist forecast snapshots unless a later requirement justifies them.
 
-## Forecasting
-The initial forecast can be calculated from:
-- User-entered starting/available balance (decide whether this is a profile field or a separate cash account table).
-- Active income schedule and next payday.
-- Actual income and expense transactions in the forecast window.
-- Unpaid recurring bill occurrences due before the next payday.
-
-A forecast snapshot table is not required for the first implementation; calculate on demand unless performance or audit needs justify persistence. Clearly label estimates and their assumptions.
-
-## Security requirements
+## 11. Security requirements
 - Enable RLS on every user-owned table.
-- Policies must scope reads/writes to `auth.uid() = user_id`; profiles use `id = auth.uid()`.
-- Global seeded categories need explicit read-only policies; users must not modify system categories.
-- Validate that category, bill, goal, and linked transaction references belong to the same user.
+- Policies scope reads/writes to `auth.uid() = user_id`; profiles use `id = auth.uid()`.
+- Global seeded categories require explicit read-only policies.
+- Validate referenced categories, bills, and transactions belong to the same user.
 - Never rely on client-supplied user_id.
-- Add indexes for common user-scoped queries and foreign keys.
+- Add indexes for user-scoped queries and foreign keys.
 - Add migrations and cross-user RLS tests before production use.
-
-## Decisions to confirm
-- Starting balance / cash account model.
-- Whether savings goals belong in MVP.
-- Whether weekly payroll is needed or only monthly/biweekly.
-- Whether recurring bill frequency needs custom intervals.
-- Whether to support multiple currencies or one preferred currency in MVP.
