@@ -41,3 +41,31 @@ history is the executable source of truth.
   financial records (no transactions, bill payments, or budgets); blocks
   changes once any exist. Awaiting approval before being applied through the
   Supabase migration tool.
+
+## Applied 2026-11-22 (after approval)
+
+`20261122110000_adr011_conditional_currency_rule.sql` was applied through the
+Supabase migration tool and verified:
+
+- Structure: the three profile-row lock triggers exist on transactions,
+  budgets, and bill_payments; the `preferred_currency` UPDATE grant is in
+  place; the trigger function is invoker-rights with a fixed empty
+  `search_path` and no table-level locks.
+- Behavior, tested live against the database with temporary test users
+  (removed afterward; all financial-record counts returned to zero):
+  1. Allowed — a user with no financial records changed currency (PHP → USD).
+  2. Blocked — after one expense transaction, the change was rejected with the
+     ADR-011 error.
+  3. Pass-through — with records present, display name and timezone still
+     updated and the currency was untouched.
+  4. Restored — deleting the transaction re-enabled the change.
+  5. Blocked via budget — a budget alone also rejected the change.
+  6. Restored — deleting the budget re-enabled the change back to PHP.
+- Bill-payment blocking was verified structurally (the table is covered by
+  the same trigger count) but not exercised live, since doing so requires a
+  full bill setup and the payment RPC; it is part of the pending Phase 2
+  runtime tests.
+- The two-session concurrency race (currency change vs. simultaneous record
+  insert) cannot be exercised through this tooling, which runs single-session
+  statements; it is recorded in Phase 2 runtime tests as pending. The lock
+  design (profile-row FOR SHARE vs FOR NO KEY UPDATE) is verified in place.

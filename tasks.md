@@ -34,13 +34,13 @@
 - [ ] Implement and test signup initialization (trigger deployed; runtime testing PENDING — do not mark complete until tests pass).
 - [ ] Implement and test atomic bill-payment RPC (implemented as `mark_bill_occurrence_paid`; runtime testing PENDING — do not mark complete until tests pass).
 - [ ] Test cross-user access isolation and direct-write denial (PENDING).
-- [ ] Apply currency-rule correction migration (allow currency change before financial records exist; block after — see note above).
+- [x] Apply currency-rule correction migration (ADR-011: allow currency change before financial records exist; block after — applied and behavior-tested 2026-11-22; two-session concurrency race and bill-payment-path verification remain pending in the runtime test list).
 
 ### Migration delivery note (deviation from ADR-004, approved 2026-11-22)
 The Supabase CLI is unsupported in this environment and files written to `supabase/migrations/` are not executed, so migrations were applied directly through the Supabase migration tool and are recorded in the database's migration history. The exact applied SQL is archived under `docs/sql/migrations/` so GitHub remains the source of truth for project source, documentation, and migration SQL per ADR-004. Document future schema changes as migrations applied through the same tool, then archive the applied SQL here.
 
-### Currency rule correction (approved 2026-11-22, migration PENDING)
-The applied `profiles_enforce_currency_immutable` trigger blocks ALL preferred-currency changes. The approved rule is: allow currency changes before any financial records exist; block them once financial records exist (transactions, bill payments, or budgets present). This requires a follow-up migration that has NOT been applied yet — do not bundle it with unrelated changes. Until that migration is applied, all currency changes remain blocked.
+### Currency rule correction (ADR-011, applied and behavior-tested 2026-11-22)
+The conditional currency rule is implemented: changes are allowed before any financial records exist and blocked once transactions, bill payments, or budgets exist. Concurrency-safe via profile-row FOR SHARE locks taken by record-creating triggers. Behavior verified live (allowed with zero records; blocked with a transaction or budget; restored after deletion; other profile fields unaffected). Still pending in runtime tests: the two-session race case and the bill-payment path.
 
 ### Salary reconciliation flag (Phase 3 prerequisite)
 The forecast's expected-vs-actual salary matching rule is application logic and was NOT implemented in these migrations. Define and test it before building the forecast feature (docs/sql-migration-plan.md section 9).

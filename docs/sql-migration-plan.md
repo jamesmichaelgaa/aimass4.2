@@ -176,7 +176,7 @@ The plan defined six logical boundaries. During application, two migrations fail
 
 - Migration delivery: applied through the Supabase migration tool rather than CLI-written files; approved as a conscious deviation from ADR-004's executable-file interpretation, with GitHub archiving the exact applied SQL.
 - Owner columns default to `auth.uid()` so client inserts that omit the owner still satisfy RLS.
-- Currency rule as implemented: `profiles_enforce_currency_immutable` blocks ALL preferred-currency changes. Corrected product rule (approved 2026-11-22): allow currency changes before any financial records exist; block them once financial records exist. A follow-up migration to implement the corrected rule is pending; it must not be bundled with unrelated changes.
+- Currency rule as implemented: ADR-011 conditional rule applied 2026-11-22 via `20261122110000_adr011_conditional_currency_rule.sql` — currency changes are allowed while the user has no financial records (transactions, bill payments, budgets) and blocked once any exist. Concurrency-safe: record inserts lock the user's profile row in FOR SHARE mode against the currency change's row lock. Behavior-tested (allowed/blocked/restored/pass-through); pending: two-session race test and bill-payment-path runtime tests.
 - Service-role grants for the AI Edge Function are deferred to Phase 4 (least privilege).
 - Recurrence advancement is implemented in the database only for the bill-payment path (`advance_due_date`); salary progression and forecast arithmetic remain application logic per ADR-005 and the forecast contract.
 
