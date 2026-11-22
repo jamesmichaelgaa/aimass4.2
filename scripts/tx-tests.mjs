@@ -51,10 +51,18 @@ function validIsoDate(s) {
   const d = new Date(`${s}T00:00:00Z`);
   return !Number.isNaN(d.getTime()) && s === d.toISOString().slice(0, 10);
 }
+function validCommaGrouping(raw) {
+  // Mirrors src/lib/types.ts hasValidCommaGrouping: a comma is only allowed
+  // as a thousands separator followed by exactly 3 digits.
+  const trimmed = String(raw).trim();
+  if (!trimmed.includes(",")) return true;
+  return /^-?\d{1,3}(,\d{3})*(\.\d{1,2})?$/.test(trimmed);
+}
 function parseAmountForApp(raw) {
-  // Mirrors the UI's decimal-string validation (positive, <=2 decimals),
-  // then relies on the DB check amount > 0 and numeric(14,2) rounding.
+  // Mirrors the UI's decimal-string validation (positive, <=2 decimals,
+  // comma-grouping-aware), then relies on the DB check amount > 0.
   const trimmed = String(raw).trim().replace(/,/g, "");
+  if (!validCommaGrouping(raw)) return { ok: false, reason: "comma-grouping" };
   if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return { ok: false, reason: "format" };
   if (toCents(trimmed) <= 0n) return { ok: false, reason: "zero-or-negative" };
   return { ok: true, value: trimmed };
@@ -64,6 +72,26 @@ const PASSWORD = "TestOnly-2026-x7";
 const runId = new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-tx";
 const emailA = `txa.${runId}@aimass-test.invalid`;
 const emailB = `txb.${runId}@aimass-test.invalid`;
+
+// Mirror of src/lib/budgets.ts fetchExpenseTotals: overall includes every
+// expense (categorized or not); byCategory only holds rows WITH a category.
+async function fetchExpenseTotalsRaw(client, day) {
+  const { data, error } = await client.from("transactions")
+    .select("id,amount,category_id")
+    .eq("kind", "expense")
+    .gte("transaction_date", day)
+    .lte("transaction_date", day);
+  let overallCents = 0n;
+  const byCategory = new Map();
+  for (const row of data ?? []) {
+    const cents = toCents(row.amount);
+    overallCents += cents;
+    if (typeof row.category_id === "string") {
+      byCategory.set(row.category_id, (byCategory.get(row.category_id) ?? 0n) + cents);
+    }
+  }
+  return { overall: centsToDecimalString(overallCents), byCategory, error: error?.message ?? null };
+}
 
 const adminNote = [];
 
@@ -173,38 +201,58 @@ async function main() {
   const listAfterT02 = await a.from("transactions").select("id,amount,description");
   const t02 = (listAfterT02.data ?? []).find((r) => r.description === "T-02 groceries expense");
 
-  // ============ T-03 amount validation (DB must reject) ============
+  // ============ T-03 amount validation (app must reject; DB is the backstop) ============
   {
     const cases = [
       ["0", "zero"], ["-5", "negative"], ["12,50.00", "malformed"], ["abc", "non-numeric"], ["", "empty"],
+      ["1,250.00", "thousands-grouped (valid)"], ["12.50", "plain decimal (valid)"], ["1250.00", "plain integer cents (valid)"],
     ];
-    let allRejected = true;
+    let allCorrect = true;
     const evidence = [];
     for (const [raw, label] of cases) {
       const appCheck = parseAmountForApp(raw);
-      if (appCheck.ok) {
-        allRejected = false;
-        evidence.push(`${label} (${raw}): app validation WRONGLY accepted`);
+      const shouldBeAccepted = label.includes("(valid)");
+      const correct = appCheck.ok === shouldBeAccepted;
+      if (!correct) {
+        allCorrect = false;
+        evidence.push(`${label} (${raw}): app validation ${appCheck.ok ? "WRONGLY accepted" : "wrongly rejected"}`);
         continue;
       }
-      // Even if app validation were bypassed, the DB must reject zero/negative.
-      if (label === "zero" || label === "negative") {
+      // For invalid zero/negative, the DB must also reject (backstop check).
+      if (!shouldBeAccepted && (label === "zero" || label === "negative")) {
         const res = await a.from("transactions").insert({
           kind: "expense", amount: raw, transaction_date: TODAY, category_id: anyExpenseA.id,
         });
         if (!res.error) {
-          allRejected = false;
+          allCorrect = false;
           evidence.push(`${label}: DB ACCEPTED ${raw} (transactions_amount_check missing!)`);
           await a.from("transactions").delete().neq("id", "");
         }
         else evidence.push(`${label}: DB rejected (${res.error.message.slice(0, 60)})`);
+      } else if (shouldBeAccepted) {
+        // Regression: the three valid formats must persist as the exact same amount.
+        const res = await a.from("transactions").insert({
+          kind: "expense", amount: raw.replace(/,/g, ""), transaction_date: TODAY, category_id: anyExpenseA.id,
+          description: "T-03 valid-format probe",
+        }).select("id,amount").single();
+        if (res.error) {
+          allCorrect = false;
+          evidence.push(`${label} (${raw}): valid format rejected: ${res.error.message.slice(0, 60)}`);
+        } else if (toCents(res.data.amount) !== toCents(raw.replace(/,/g, ""))) {
+          allCorrect = false;
+          evidence.push(`${label} (${raw}): stored as ${res.data.amount} (value changed!)`);
+          await a.from("transactions").delete().eq("id", res.data.id);
+        } else {
+          evidence.push(`${label} (${raw}): stored exactly as ${res.data.amount}`);
+          await a.from("transactions").delete().eq("id", res.data.id);
+        }
       } else {
-        evidence.push(`${label}: rejected at app validation layer (${appCheck.reason})`);
+        evidence.push(`${label} (${raw}): rejected at app validation layer (${appCheck.reason})`);
       }
     }
-    record("T-03", "All invalid amounts rejected before persistence",
-      allRejected ? "all rejected at app layer (or DB where applicable)" : evidence.join("; "),
-      allRejected ? "PASS" : "FAIL", evidence.join(" | "));
+    record("T-03", "Invalid amounts rejected before persistence; 1250.00 / 1,250.00 / 12.50 accepted unchanged",
+      allCorrect ? "all formats behaved as specified" : evidence.join("; "),
+      allCorrect ? "PASS" : "FAIL", evidence.join(" | "));
   }
   // DB precision guard for 999999999999.995 — overflow must be rejected or rounded by numeric(14,2); test the raw DB behavior directly
   {
@@ -260,15 +308,24 @@ async function main() {
     const noCat = await a.from("transactions").insert({
       kind: "expense", amount: "10.00", transaction_date: TODAY, category_id: null,
       description: "T-05 no category",
-    }).select("id");
+    }).select("id,category_id").single();
     const allowedNoCat = !noCat.error;
-    let cleaned = true;
-    if (allowedNoCat) await a.from("transactions").delete().eq("id", noCat.data[0].id);
-    else cleaned = false;
-    record("T-05", "Category-optional behavior documented (record actual)",
-      allowedNoCat ? "transaction without category is ACCEPTED (category_id nullable)" : `rejected: ${noCat.error?.message?.slice(0, 60)}`,
-      "PASS", "actual behavior recorded; per DB schema category_id IS nullable so both outcomes are structurally possible",
-      allowedNoCat ? "Confirm with product whether optional categories are intended (spec 5.3 lists category as a field but not clearly required). No code change in this stage." : "");
+    if (allowedNoCat) {
+      // Approved product rule: uncategorized expenses count toward OVERALL
+      // monthly expense totals but must not be attached to any category.
+      const overall = await fetchExpenseTotalsRaw(a, TODAY);
+      const uncategorizedCounted = toCents(overall.overall) >= 1000n && !overall.byCategory.has(noCat.data.id) && noCat.data.category_id === null;
+      if (overall.rowId) await a.from("transactions").delete().eq("id", noCat.data.id);
+      record("T-05", "Uncategorized transaction allowed; counts toward overall totals; not tied to any category",
+        allowedNoCat && uncategorizedCounted
+          ? "accepted with category_id=null; overall expense totals include it; no category bucket assigned"
+          : `accepted=${allowedNoCat}, countedInOverall=${uncategorizedCounted}`,
+        allowedNoCat && uncategorizedCounted ? "PASS" : "FAIL",
+        "Approved product decision: category stays optional; uncategorized expenses feed overall totals only.");
+    } else {
+      record("T-05", "Uncategorized transaction allowed; counts toward overall totals; not tied to any category",
+        `rejected: ${noCat.error?.message?.slice(0, 60)}`, "FAIL", "");
+    }
   }
 
   // ============ T-06 edit ============

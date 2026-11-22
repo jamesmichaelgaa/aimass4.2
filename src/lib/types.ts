@@ -58,11 +58,21 @@ export function isTransactionKind(value: string): value is TransactionKind {
   return value === "income" || value === "expense";
 }
 
+// Shared comma-grouping rules for amount inputs:
+// - "1,250.00" (thousands grouping, comma followed by exactly 3 digits) is accepted.
+// - "12,50.00" (comma NOT followed by exactly 3 digits) is REJECTED, never
+//   silently reinterpreted — a comma-as-decimal typo must not become 1250.00.
+function hasValidCommaGrouping(trimmed: string): boolean {
+  const commas = trimmed.match(/,/g);
+  if (!commas) return true;
+  return /^-?\d{1,3}(,\d{3})*(\.\d{1,2})?$/.test(trimmed);
+}
+
 // Validates a user-entered amount and returns an exact decimal string
 // (never a JS number) for persistence into numeric(14,2).
 export function parseAmountToDecimalString(raw: string): string | null {
   const trimmed = raw.trim().replace(/,/g, "");
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+  if (!hasValidCommaGrouping(raw.trim()) || !/^\d+(\.\d{1,2})?$/.test(trimmed)) {
     return null;
   }
   const [intPart, decPart] = trimmed.split(".");
@@ -159,7 +169,7 @@ export function centsToDecimalString(cents: bigint): string {
 
 export function parsePositiveAmount(raw: string): number | null {
   const trimmed = raw.trim().replace(/,/g, "");
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+  if (!hasValidCommaGrouping(raw.trim()) || !/^\d+(\.\d{1,2})?$/.test(trimmed)) {
     return null;
   }
   const value = Number(trimmed);
@@ -171,7 +181,7 @@ export function parsePositiveAmount(raw: string): number | null {
 
 export function parseNonNegativeAmount(raw: string): number | null {
   const trimmed = raw.trim().replace(/,/g, "");
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+  if (!hasValidCommaGrouping(raw.trim()) || !/^\d+(\.\d{1,2})?$/.test(trimmed)) {
     return null;
   }
   const value = Number(trimmed);
@@ -185,7 +195,7 @@ export function parseNonNegativeAmount(raw: string): number | null {
 // mirroring parseAmountToDecimalString without its zero rejection.
 export function parseNonNegativeDecimalString(raw: string): string | null {
   const trimmed = raw.trim().replace(/,/g, "");
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+  if (!hasValidCommaGrouping(raw.trim()) || !/^\d+(\.\d{1,2})?$/.test(trimmed)) {
     return null;
   }
   const [intPart, decPart] = trimmed.split(".");
