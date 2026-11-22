@@ -17,17 +17,20 @@
 - [ ] Connect repository to Bolt without overwriting documentation.
 
 ## Phase 1 — Frontend foundation
-- [ ] Scaffold React + TypeScript + Vite application.
-- [ ] Establish routing, layout, responsive navigation, and design system.
-- [ ] Build onboarding and authentication screens.
-- [ ] Build dashboard shell with loading, empty, and error states.
-- [ ] Add lint, typecheck, test, and production build scripts.
+- [x] Scaffold React + TypeScript + Vite application.
+- [x] Establish routing, layout, responsive navigation, and design system.
+- [x] Build onboarding and authentication screens (sign up, sign in, password recovery request, sign out; three-step onboarding: profile, salary schedule, cash position).
+- [x] Build dashboard shell with loading, empty, and error states.
+- [x] Add lint, typecheck, test, and production build scripts (typecheck + build scripts added; lint and test scripts pending test framework setup).
 - [ ] Add GitHub Actions CI using actual package scripts.
+
+### Phase 1 verification status (2026-11-22)
+Typecheck and production build pass; the bundle was scanned and contains no service-role or OpenAI strings. Auth and onboarding write paths use the existing tables and RLS. NOT yet verified in a browser (no browser tooling in this environment): real signup/login round-trip, onboarding saves, redirect behavior, and mobile rendering. Do not mark auth "tested" until a browser session or end-to-end test confirms it.
 
 ## Phase 2 — Supabase foundation
 - [x] Create a new Supabase development project (Bolt-provisioned Supabase project in use).
 - [ ] Configure Auth providers and redirect URLs.
-- [x] Create and commit SQL migrations (applied 2026-11-22 via the Supabase migration tool; exact applied SQL archived under docs/sql/migrations/ — see the implemented status section of docs/sql-migration-plan.md for the nine applied files and the seven logical changes).
+- [x] Create and commit SQL migrations (applied 2026-11-22 via the Supabase migration tool; exact applied SQL archived under docs/sql/migrations/ — ten applied files covering eight logical changes; see docs/sql-migration-plan.md "Implemented status").
 - [x] Enable RLS on every user-owned table.
 - [x] Add owner-scoped policies and validate foreign-key ownership (composite FKs: transactions same-owner/same-kind; budgets and bills same-owner; expense-kind validation triggers).
 - [x] Add indexes, constraints, and safe monetary data types (all money is numeric(14,2)).

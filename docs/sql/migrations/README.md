@@ -19,6 +19,7 @@ history is the executable source of truth.
 | 7 | `20261122103014_20261122000006_verification.sql.sql` | Structural assertions: eight tables, RLS everywhere, expected policies, unique safeguards, triggers, RPC grants, no client write grants on `bill_payments`. |
 | 8 | `20261122103040_20261122000001_extensions_and_helpers.sql.sql` | Re-apply of migration 1 that pins a fixed empty `search_path` on `set_updated_at()`. |
 | 9 | `20261122103049_20261122000007_function_search_path_hardening.sql.sql` | Pins a fixed empty `search_path` on the remaining helper functions and fixes `advance_due_date` clamping for short months. |
+| 10 | `20261122115303_20261122110000_adr011_conditional_currency_rule.sql.sql` | Implements ADR-011: allows preferred-currency changes only while the user has no financial records (transactions, bill payments, budgets); blocks changes once any exist. Concurrency-safe via profile-row FOR SHARE locks taken by BEFORE INSERT triggers on the three record tables; grants the `preferred_currency` UPDATE column. Behavior-tested (see below). |
 
 ## Notes
 
@@ -28,24 +29,13 @@ history is the executable source of truth.
   foreign key and failed during its first apply attempt.
 - Entries 1 and 8 are two versions of the same logical migration; the second
   pins the function's `search_path` per the security advisor's recommendation.
-- Seven logical schema changes were applied across nine recorded migration
-  files; two were re-applies of an earlier file to fix a defect after first
-  apply.
+- Seven logical schema changes were applied across the first nine recorded
+  migration files; two were re-applies of an earlier file to fix a defect
+  after first apply. File 10 is the ADR-011 currency rule.
 - Every file above is exactly what the database executed; no editorial
   cleanup was performed.
 
-## Pending migration (prepared, NOT applied)
-
-- `pending/20261122110000_adr011_conditional_currency_rule.sql` — implements
-  ADR-011: allows preferred-currency changes only while the user has no
-  financial records (no transactions, bill payments, or budgets); blocks
-  changes once any exist. Awaiting approval before being applied through the
-  Supabase migration tool.
-
-## Applied 2026-11-22 (after approval)
-
-`20261122110000_adr011_conditional_currency_rule.sql` was applied through the
-Supabase migration tool and verified:
+## ADR-011 verification record (file 10, applied 2026-11-22)
 
 - Structure: the three profile-row lock triggers exist on transactions,
   budgets, and bill_payments; the `preferred_currency` UPDATE grant is in
