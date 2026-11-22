@@ -61,7 +61,7 @@ export default function SignUp() {
     return (
       <div className="auth-page">
         <div className="card auth-card">
-          <div className="brand">aimass</div>
+          <div className="brand">Budget Buddy</div>
           <h2>Check your email</h2>
           <p className="tagline">
             We sent a confirmation link to {email.trim()}. Open it to finish creating
