@@ -328,10 +328,26 @@ Full results in **docs/testing-results-ai.md**. Summary:
 - Verified: unauthenticated 401 (gateway verify_jwt), payload validation (empty/oversize/malformed → generic 400), grounded answers with forecastAvailable=false (forecast block intentionally not wired yet per docs/ai-agent-spec.md §9b), cross-user isolation (B cannot see A's uniquely-tagged transaction; the context builder never selects description columns), off-topic refusal, read-only refusal of write requests, prompt-injection failure, no-fabrication honesty, rate limiting 10/60s (verified via direct probes: an invalid-payload burst trips 429 on the 11th call and a fresh-bucket valid burst on the 12th; the in-harness burst is timing-sensitive because each model call takes 1–3 s), no service-role use, no key literals, no eval/write sinks.
 - No application code changed. typecheck + build pass.
 
+### Stage 6 execution results (2026-11-23): Forecast batch EXECUTED — 21 PASS / 0 FAIL / 0 BLOCKED
+Full results in **docs/testing-results-forecast.md**. Summary:
+- All F-01…F-15 cases pass against the existing implementation, including the full F-09a–g reconciliation matrix per docs/salary-reconciliation.md (window [P−3,P] inclusive, ±0.01 cent tolerance, earliest-match, one-reconcile-only), exact-cent F-08 regression guard (0.07 + 1000.10 − 999.99 + 0.04 = 0.22 with JSON-number payloads), paid-bill exclusion with no double counting (F-07 delta assertion), negative-projection warning (F-10), single-source cash upsert (F-12), unavailable-forecast prompts (F-14), and cross-user isolation (F-15).
+- NEW disposable account fxa.20261123-forecast@aimass-test.invalid was used (txa's Bills-stage payment-linked leftovers would contaminate every forecast window). Signup still rate-limited (429), so the documented SQL-provisioning workaround was reused; TWO additional required auth.users column values were discovered (`email_change_token_new = ''`, `confirmation_sent_at` NOT NULL) and are documented in the results file.
+- NO application code was modified in this stage; seven harness-only corrections were made and documented (JSON-number comparisons again, bulk-delete abort semantics, F-07 far-future isolation for client-undeletable payment-linked rows, F-09 as-of window, F-09e actual-amount counting, F-10 fixture sizing, F-02 expectation). typecheck + build pass.
+- Leftover state on fxa: exactly the F-07 trio (1 bill, 1 payment, 1 linked expense dated 2027-06-05) — client-undeletable by design, removed at FX-5. A mid-stage product question (bill deletion UX) was resolved as working-as-designed per the user (Deactivate + History retained, no Delete button); no code changed.
+
 ### Remaining verification stages (not yet run)
-- Forecast batch F-01…F-15 (docs/testing-plan-financial.md §6), per the docs/salary-reconciliation.md contract, using the same deferred accounts.
-- Security batch: X-01…X-06 cross-user matrix across all eight tables, forged IDs, edge-function auth, account-deletion round-trip, password-reset flow.
-- Final report docs/mvp-testing-summary.md and FX-5 account teardown at the very end.
+- Final report docs/mvp-testing-summary.md and FX-5 account teardown at the very end (deletes txa, txb, fxa; includes the otherwise-undeletable payment-linked leftovers on txa and fxa).
+
+### Stage 7 execution results (2026-11-23): Security batch EXECUTED — 10 PASS / 0 FAIL / 0 BLOCKED
+Full results in **docs/testing-results-security.md**. Summary:
+- X-01 cross-user matrix: on ALL eight user-owned tables (profiles, categories, transactions, budgets, cash_positions, income_schedules, recurring_bills, bill_payments), user B's SELECT/UPDATE/DELETE against user A's REAL row ids returned zero rows / were denied (19/19 sub-checks) and A's rows were intact afterwards. X-02 forged user_id inserts rejected 5/5. X-03 unauthenticated anon client denied/empty on all 8. X-04 cross-user category FK rejected. X-05 cross-user RPC denial re-asserted (primary live coverage R-13). X-06 account-deletion round-trip with a dedicated SQL-provisioned disposable account (fxdel): invalid token 401, real fresh-session deletion 200, deleted account cannot sign in, SQL verification confirmed ZERO rows left across all 8 tables + auth row gone, and B's 9 default categories intact.
+- Auth-flow coverage: wrong-password/invalid-token rejection and deleted-account-sign-in denial verified against real auth endpoints. Password reset flow remains a browser/SMTP-stage item (dev SMTP rate-limited; page verified structurally earlier).
+- NO application code changed. Harness-only fixes documented in the results file (JSON-number comparison again, select-must-include-filtered-column, section wrapper so a crashed probe records FAIL instead of aborting). typecheck + build pass.
+
+### FX-5 teardown + final report (2026-11-23): verification plan COMPLETE
+- Final report written: **docs/mvp-testing-summary.md** — overall tally 96 case records, 0 FAIL, 0 BLOCKED across all seven stages; three genuine defects found and fixed (T-03 comma-as-decimal 100× money risk, advance_due_date SQLSTATE 22008, JSON-number money crash); all remaining gaps enumerated with owners.
+- FX-5 executed: auth rows for txa, txb, and fxa deleted via the documented SQL path (database-enforced cascade removed every owned record, including the otherwise client-undeletable payment-linked leftovers); fxdel was already gone via the X-06 round-trip. Post-teardown SQL verification: ZERO orphan rows across all 8 user-owned tables; the real user's account and 9 default categories intact.
+- The runtime verification plan in docs/testing-plan-financial.md is fully executed. Remaining items are the browser-stage checks listed in the final report (no browser tooling in this environment) and Phase 6 production work.
 
 ### Stage 3 execution results (2026-11-22): Budgets batch EXECUTED — 17 PASS / 0 FAIL / 0 BLOCKED
 Full results in **docs/testing-results-budgets.md**. Summary:

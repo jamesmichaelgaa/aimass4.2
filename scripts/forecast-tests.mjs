@@ -1,9 +1,9 @@
 // Financial test harness — Forecast batch (F-01 … F-15, docs/testing-plan-financial.md §6).
-// Same conventions as the earlier stages: real anon-key clients + real password-auth
-// sessions (RLS applies exactly as in the running app); no service-role key.
-// The forecast itself is computed by mirroring src/lib/forecast.ts's pure logic over
-// the REAL user rows the app would read (schedule, cash, transactions, bills,
-// bill_payments), so every assertion is against production-shaped inputs.
+// Real anon-key clients + real password-auth sessions (RLS applies exactly as in the
+// running app); no service-role key. The forecast is computed by mirroring
+// src/lib/forecast.ts's pure logic over the REAL user rows the app would read
+// (schedule, cash, transactions, bills, bill_payments), so every assertion is
+// against production-shaped inputs.
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
@@ -46,9 +46,18 @@ function centsToDecimalString(c) {
 function addSignedAmounts(list) {
   return centsToDecimalString(list.reduce((acc, v) => acc + toCents(v), 0n));
 }
+// Mirror of the app's asDecimalString: PostgREST returns numeric(14,2) as JSON
+// numbers (500, not "500.00"), so every value is normalized before comparison.
+function norm(v) {
+  return centsToDecimalString(toCents(String(v)));
+}
 
 const PASSWORD = "TestOnly-2026-x7";
-const emailA = "txa.20261122-tx@aimass-test.invalid";
+// Fresh disposable account for this stage: txa still holds payment-linked
+// leftovers from the bills stage (kept until FX-5 teardown), which would
+// contaminate every forecast window. txb is clean and reused as the
+// cross-user isolation account.
+const emailA = "fxa.20261123-forecast@aimass-test.invalid";
 const emailB = "txb.20261122-tx@aimass-test.invalid";
 
 function addDaysIso(iso, days) {
@@ -56,7 +65,7 @@ function addDaysIso(iso, days) {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
-// Mirror of src/lib/forecast.ts addMonthsClamped / addDays / nextPaydayAfter.
+// Mirror of src/lib/forecast.ts addMonthsClamped / nextPaydayAfter.
 function addMonthsClamped(iso, months) {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return iso;
@@ -80,6 +89,12 @@ function nextPaydayAfter(frequency, nextPayday, afterIso) {
   }
   return cursor;
 }
+function billStep(frequency, iso) {
+  if (frequency === "weekly") return addDaysIso(iso, 7);
+  if (frequency === "monthly") return addMonthsClamped(iso, 1);
+  if (frequency === "quarterly") return addMonthsClamped(iso, 3);
+  return addMonthsClamped(iso, 12);
+}
 // Mirror of nextBillDueAfter + unpaidBillOccurrences for the window.
 function unpaidOccurrences(bills, paidKeys, asOf, cutoff) {
   const out = [];
@@ -88,21 +103,15 @@ function unpaidOccurrences(bills, paidKeys, asOf, cutoff) {
     let cursor = bill.next_due_date;
     let guard = 0;
     while (cursor <= asOf && guard < 400) {
-      if (bill.frequency === "weekly") cursor = addDaysIso(cursor, 7);
-      else if (bill.frequency === "monthly") cursor = addMonthsClamped(cursor, 1);
-      else if (bill.frequency === "quarterly") cursor = addMonthsClamped(cursor, 3);
-      else cursor = addMonthsClamped(cursor, 12);
+      cursor = billStep(bill.frequency, cursor);
       guard++;
     }
     guard = 0;
     while (cursor <= cutoff && guard < 60) {
       if (!paidKeys.has(`${bill.id}:${cursor}`)) {
-        out.push({ billId: bill.id, dueDate: cursor, amount: String(bill.amount), categoryId: bill.category_id, name: bill.name });
+        out.push({ billId: bill.id, dueDate: cursor, amount: norm(bill.amount), categoryId: bill.category_id, name: bill.name });
       }
-      if (bill.frequency === "weekly") cursor = addDaysIso(cursor, 7);
-      else if (bill.frequency === "monthly") cursor = addMonthsClamped(cursor, 1);
-      else if (bill.frequency === "quarterly") cursor = addMonthsClamped(cursor, 3);
-      else cursor = addMonthsClamped(cursor, 12);
+      cursor = billStep(bill.frequency, cursor);
       guard++;
     }
   }
@@ -116,7 +125,7 @@ function reconcile(transactions, schedule, payday, salaryCategoryId) {
   const candidates = transactions.filter((t) =>
     t.kind === "income" && t.category_id === salaryCategoryId
     && t.transaction_date >= windowStart && t.transaction_date <= payday
-    && (toCents(t.amount) - expectedCents >= -1n) && (toCents(t.amount) - expectedCents <= 1n)
+    && (toCents(norm(t.amount)) - expectedCents >= -1n) && (toCents(norm(t.amount)) - expectedCents <= 1n)
   ).sort((x, y) => x.transaction_date.localeCompare(y.transaction_date) || String(x.created_at).localeCompare(String(y.created_at)));
   return candidates[0] ?? null;
 }
@@ -143,14 +152,14 @@ async function computeForecastMirror(client, schedule, cashAmount, cashAsOf) {
   const match = reconcile(transactions, schedule, payday, salaryCategoryId);
   let incomeCents = 0n, expenseCents = 0n;
   for (const t of transactions) {
-    if (t.kind === "income") incomeCents += toCents(String(t.amount));
-    else expenseCents += toCents(String(t.amount));
+    if (t.kind === "income") incomeCents += toCents(norm(t.amount));
+    else expenseCents += toCents(norm(t.amount));
   }
   const expectedSalaryReconciled = match !== null;
   const billTotal = unpaid.reduce((acc, o) => acc + toCents(o.amount), 0n);
-  const expectedSalary = expectedSalaryReconciled ? "0.00" : String(schedule.expected_amount);
+  const expectedSalary = expectedSalaryReconciled ? "0.00" : norm(schedule.expected_amount);
   const estimatedEndingCash = addSignedAmounts([
-    String(cashAmount), centsToDecimalString(incomeCents), centsToDecimalString(-expenseCents), expectedSalary, centsToDecimalString(-billTotal),
+    norm(cashAmount), centsToDecimalString(incomeCents), centsToDecimalString(-expenseCents), expectedSalary, centsToDecimalString(-billTotal),
   ]);
   const warnings = [];
   if (estimatedEndingCash.startsWith("-")) warnings.push("negative");
@@ -158,11 +167,11 @@ async function computeForecastMirror(client, schedule, cashAmount, cashAsOf) {
   if (unpaid.length > 0) warnings.push(`unpaidBills:${unpaid.length}`);
   return {
     ok: true, asOfDate: cashAsOf, startDate: from, endDate: payday,
-    startingCash: String(cashAmount), recordedIncome: centsToDecimalString(incomeCents),
+    startingCash: norm(cashAmount), recordedIncome: centsToDecimalString(incomeCents),
     recordedExpenses: centsToDecimalString(expenseCents), expectedSalary, expectedSalaryReconciled,
     unpaidBills: unpaid, estimatedEndingCash, warnings,
     events: [
-      ...transactions.map((t) => ({ date: t.transaction_date, kind: t.kind, amount: String(t.amount) })),
+      ...transactions.map((t) => ({ date: t.transaction_date, kind: t.kind, amount: norm(t.amount) })),
       ...(expectedSalaryReconciled ? [] : [{ date: payday, kind: "expected-salary", amount: expectedSalary }]),
       ...unpaid.map((o) => ({ date: o.dueDate, kind: "bill", amount: `-${o.amount}` })),
     ].sort((x, y) => x.date.localeCompare(y.date)),
@@ -172,9 +181,19 @@ async function computeForecastMirror(client, schedule, cashAmount, cashAsOf) {
 const adminNote = [];
 async function createTestUser(email) {
   const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data, error } = await client.auth.signInWithPassword({ email, password: PASSWORD });
-  if (error || !data.session) { adminNote.push(`${email}: ${error?.message ?? "no session"}`); return null; }
-  return { email, session: data.session };
+  let session = null;
+  const signIn = await client.auth.signInWithPassword({ email, password: PASSWORD });
+  if (signIn.data?.session) {
+    session = signIn.data.session;
+  } else {
+    const signUp = await client.auth.signUp({ email, password: PASSWORD });
+    if (signUp.error || !signUp.data?.session) {
+      adminNote.push(`${email}: ${signUp.error?.message ?? signIn.error?.message ?? "no session"}`);
+      return null;
+    }
+    session = signUp.data.session;
+  }
+  return { email, session };
 }
 
 async function main() {
@@ -193,7 +212,9 @@ async function main() {
   const otherIncomeA = catsA.data.find((c) => c.name === "Other Income" && c.kind === "income");
   const rentA = catsA.data.find((c) => c.kind === "expense" && c.name === "Rent");
 
-  // Clean slate.
+  // Best-effort clean slate. Bulk deletes abort entirely when a single
+  // payment-linked row exists (bill_payments RESTRICT), so per-case cleanups
+  // below delete their own rows individually instead of relying on this.
   await a.from("bill_payments").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   await b.from("bill_payments").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   await a.from("recurring_bills").delete().neq("id", "00000000-0000-0000-0000-000000000000");
@@ -204,6 +225,12 @@ async function main() {
   await b.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   await a.from("cash_positions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   await b.from("cash_positions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+
+  // Individual delete that reports failures instead of failing silently.
+  async function del(client, table, id, errs) {
+    const { error } = await client.from(table).delete().eq("id", id);
+    if (error) errs.push(`${table}/${id}: ${error.message}`);
+  }
 
   async function setInputs(client, { amount, asOf, frequency, expected, nextPayday }) {
     await client.from("cash_positions").upsert({ amount, as_of_date: asOf }, { onConflict: "user_id" });
@@ -225,7 +252,6 @@ async function main() {
     record("F-01", "Monthly baseline: 8500 + 25000 on payday = 33500.00; salary event on P",
       f.ok ? `ending=${f.estimatedEndingCash} window=(${f.startDate}…${f.endDate}]` : f.message,
       ok ? "PASS" : "FAIL", "");
-    // Cleanup schedule/cash for next case
     await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   }
 
@@ -234,19 +260,16 @@ async function main() {
     const P = addDaysIso(TODAY, 10);
     await setInputs(a, { amount: "1000.00", asOf: D, frequency: "biweekly", expected: "5000.00", nextPayday: P });
     const f = await computeForecastMirror(a, { frequency: "biweekly", next_payday: P, expected_amount: "5000.00" }, "1000.00", D);
-    const expectedEnd = addDaysIso(P, 14);
-    const ok = f.ok && f.endDate === expectedEnd;
-    record("F-02", "Biweekly: next progression is exactly P+14; window end = P+14",
-      f.ok ? `endDate=${f.endDate} (expected ${expectedEnd})` : f.message,
+    const progression = nextPaydayAfter("biweekly", P, P); // the payday AFTER P
+    const ok = f.ok && f.endDate === P && progression === addDaysIso(P, 14);
+    record("F-02", "Biweekly: forecast window ends on the next payday P; the following progression is exactly P+14",
+      f.ok ? `endDate=${f.endDate} (expected ${P}); next progression ${progression} (expected ${addDaysIso(P, 14)})` : f.message,
       ok ? "PASS" : "FAIL", "");
     await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   }
 
-  // ============ F-03 monthly clamping on payday projection ============
+  // ============ F-03 monthly clamping on payday progression ============
   {
-    // Payday on the 31st; the forecast window end is that 31st itself (single
-    // hop). Clamp semantics are exercised across months in the bills stage and
-    // in the pure-math probe here (31st → Feb 28 / Apr 30).
     const feb28 = addMonthsClamped("2026-01-31", 1);
     const apr30 = addMonthsClamped("2026-01-31", 3);
     const ok = feb28 === "2026-02-28" && apr30 === "2026-04-30";
@@ -270,9 +293,11 @@ async function main() {
     record("F-04", "Income D+1 counts (ending 35500.00); income dated D does NOT (window is strictly after D)",
       f.ok ? `recordedIncome=${f.recordedIncome} ending=${f.estimatedEndingCash}` : f.message,
       ok ? "PASS" : "FAIL", "");
-    await a.from("transactions").delete().eq("id", incomeRow.data.id);
-    await a.from("transactions").delete().eq("id", onD.data.id);
+    const errs = [];
+    await del(a, "transactions", incomeRow.data.id, errs);
+    await del(a, "transactions", onD.data.id, errs);
     await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (errs.length) results[results.length - 1].evidence += ` cleanup: ${errs.join("; ")}`;
   }
 
   // ============ F-05 recorded expenses strictly after D ============
@@ -290,9 +315,11 @@ async function main() {
     record("F-05", "Expense D+2 counts (ending 33200.00); expense dated D does NOT",
       f.ok ? `recordedExpenses=${f.recordedExpenses} ending=${f.estimatedEndingCash}` : f.message,
       ok ? "PASS" : "FAIL", "");
-    await a.from("transactions").delete().eq("id", expRow.data.id);
-    await a.from("transactions").delete().eq("id", onD.data.id);
+    const errs = [];
+    await del(a, "transactions", expRow.data.id, errs);
+    await del(a, "transactions", onD.data.id, errs);
     await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (errs.length) results[results.length - 1].evidence += ` cleanup: ${errs.join("; ")}`;
   }
 
   // ============ F-06 unpaid bill occurrence ============
@@ -308,35 +335,39 @@ async function main() {
     record("F-06", "Unpaid 500.00 bill due D+5: timeline event + ending 33000.00",
       f.ok ? `unpaid=${f.unpaidBills.length} ending=${f.estimatedEndingCash}` : f.message,
       ok ? "PASS" : "FAIL", "");
-    await a.from("bill_payments").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    await a.from("recurring_bills").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    await a.from("transactions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    const errs = [];
+    await del(a, "recurring_bills", bill.data.id, errs);
     await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (errs.length) results[results.length - 1].evidence += ` cleanup: ${errs.join("; ")}`;
   }
 
   // ============ F-07 paid bill exclusion / no double count ============
   {
-    const P = addDaysIso(TODAY, 10);
-    await setInputs(a, { amount: "8500.00", asOf: D, frequency: "monthly", expected: "25000.00", nextPayday: P });
+    // Far-future window: the recorded payment leaves a payment-linked expense
+    // that only account teardown can remove (bill_payments is client-read-only
+    // by design). Dating it 2027-06 keeps it outside every other case's
+    // window; assertions are deltas so reruns stay exact.
+    const D7 = "2027-06-01";
+    const P7 = "2027-06-10";
+    const DUE7 = "2027-06-05";
+    await setInputs(a, { amount: "8500.00", asOf: D7, frequency: "monthly", expected: "25000.00", nextPayday: P7 });
     const bill = await a.from("recurring_bills").insert({
-      name: "F-07 bill", amount: "500.00", frequency: "monthly", next_due_date: addDaysIso(D, 5), category_id: rentA.id,
+      name: "F-07 bill", amount: "500.00", frequency: "monthly", next_due_date: DUE7, category_id: rentA.id,
     }).select("id").single();
-    // Pay it through the RPC (creates linked expense dated D+5).
+    const before = await computeForecastMirror(a, { frequency: "monthly", next_payday: P7, expected_amount: "25000.00" }, "8500.00", D7);
     const pay = await a.rpc("mark_bill_occurrence_paid", {
-      p_recurring_bill_id: bill.data.id, p_due_date: addDaysIso(D, 5),
+      p_recurring_bill_id: bill.data.id, p_due_date: DUE7,
       p_category_id: rentA.id, p_description: "F-07 payment", p_amount: "500.00", p_transaction_date: null,
     });
-    const f = await computeForecastMirror(a, { frequency: "monthly", next_payday: P, expected_amount: "25000.00" }, "8500.00", D);
-    // Expected: no projected unpaid occurrence; recorded expenses include the
-    // 500.00 exactly once → ending = 8500 + 25000 − 500 = 33000.00.
-    const ok = !pay.error && f.ok && f.unpaidBills.length === 0
-      && f.recordedExpenses === "500.00" && f.estimatedEndingCash === "33000.00";
-    record("F-07", "Paid occurrence: projected bill disappears; recorded expense counted exactly ONCE (no double count)",
-      f.ok ? `unpaid=${f.unpaidBills.length} recordedExpenses=${f.recordedExpenses} ending=${f.estimatedEndingCash}` : (pay.error?.message ?? f.message),
-      ok ? "PASS" : "FAIL", "");
-    await a.from("bill_payments").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    await a.from("recurring_bills").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    await a.from("transactions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    const after = await computeForecastMirror(a, { frequency: "monthly", next_payday: P7, expected_amount: "25000.00" }, "8500.00", D7);
+    const expenseDelta = addSignedAmounts([after.recordedExpenses, centsToDecimalString(-toCents(before.recordedExpenses))]);
+    const endingDelta = addSignedAmounts([after.estimatedEndingCash, centsToDecimalString(-toCents(before.estimatedEndingCash))]);
+    const ok = !pay.error && before.ok && after.ok
+      && before.unpaidBills.length === 1 && after.unpaidBills.length === 0
+      && expenseDelta === "500.00" && endingDelta === "0.00";
+    record("F-07", "Paid occurrence: projected unpaid bill disappears; linked expense counted exactly ONCE — expenses +500.00 AND ending UNCHANGED (bill line −500.00 replaced by the actual expense +500.00; no double count)",
+      `before unpaid=${before.ok ? before.unpaidBills.length : "?"} after unpaid=${after.ok ? after.unpaidBills.length : "?"} expenseDelta=${expenseDelta} endingDelta=${endingDelta}${pay.error ? " payError=" + pay.error.message : ""}`,
+      ok ? "PASS" : "FAIL", "Payment-linked rows remain until FX-5 teardown; deltas keep reruns exact. before/after windows both fully inside June 2027.");
     await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   }
 
@@ -355,53 +386,71 @@ async function main() {
     record("F-08", "Exact cents: 0.07 + 1000.10 − 999.99 + 0.04 = 0.22 (no float drift; JSON-number payloads safe)",
       f.ok ? `ending=${f.estimatedEndingCash} income=${f.recordedIncome} expense=${f.recordedExpenses}` : f.message,
       ok ? "PASS" : "FAIL", "Regression guard for the earlier amountToCents JSON-number crash.");
-    await a.from("transactions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    const errs = [];
+    await del(a, "transactions", i1.data.id, errs);
+    await del(a, "transactions", e1.data.id, errs);
     await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (errs.length) results[results.length - 1].evidence += ` cleanup: ${errs.join("; ")}`;
   }
 
   // ============ F-09 reconciliation series ============
   {
-    const P = TODAY; // payday = today; window [P-3, P]
+    const P = TODAY; // payday = today; reconciliation window [P-3, P]
+    // As-of = P−4 so the P−3 boundary case sits INSIDE the forecast window
+    // (D, P]: reconciliation only sees transactions the forecast fetches.
+    const D9 = addDaysIso(P, -4);
     const scenarios = [
-      { id: "F-09a", date: P, amount: "25000.00", category: salaryA.id, reconciled: true, note: "exact on payday" },
-      { id: "F-09b", date: addDaysIso(P, -3), amount: "25000.00", category: salaryA.id, reconciled: true, note: "P−3 inclusive" },
-      { id: "F-09c", date: addDaysIso(P, -4), amount: "25000.00", category: salaryA.id, reconciled: false, note: "P−4 outside window" },
-      { id: "F-09d", date: P, amount: "24999.98", category: salaryA.id, reconciled: false, note: "off by 0.02" },
-      { id: "F-09e", date: P, amount: "24999.99", category: salaryA.id, reconciled: true, note: "off by 0.01 tolerance" },
-      { id: "F-09f", date: P, amount: "25000.00", category: otherIncomeA.id, reconciled: false, note: "wrong category" },
+      { id: "F-09a", date: P, amount: "25000.00", category: salaryA.id, reconciled: true, inWindow: true, note: "exact on payday" },
+      { id: "F-09b", date: addDaysIso(P, -3), amount: "25000.00", category: salaryA.id, reconciled: true, inWindow: true, note: "P−3 inclusive" },
+      { id: "F-09c", date: D9, amount: "25000.00", category: salaryA.id, reconciled: false, inWindow: false, note: "P−4 outside both windows (transaction not counted at all)" },
+      { id: "F-09d", date: P, amount: "24999.98", category: salaryA.id, reconciled: false, inWindow: true, note: "off by 0.02" },
+      { id: "F-09e", date: P, amount: "24999.99", category: salaryA.id, reconciled: true, inWindow: true, note: "off by 0.01 tolerance" },
+      { id: "F-09f", date: P, amount: "25000.00", category: otherIncomeA.id, reconciled: false, inWindow: true, note: "wrong category" },
     ];
     for (const s of scenarios) {
-      await setInputs(a, { amount: "8500.00", asOf: D, frequency: "monthly", expected: "25000.00", nextPayday: P });
+      await setInputs(a, { amount: "8500.00", asOf: D9, frequency: "monthly", expected: "25000.00", nextPayday: P });
       const tx = await a.from("transactions").insert({
         kind: "income", amount: s.amount, transaction_date: s.date, category_id: s.category, description: `F-09 ${s.id}`,
       }).select("id").single();
-      // Wait: payday = TODAY and cash as-of = D (2 days ago) → payday is after D. Good.
-      const f = await computeForecastMirror(a, { frequency: "monthly", next_payday: P, expected_amount: "25000.00" }, "8500.00", D);
+      const f = await computeForecastMirror(a, { frequency: "monthly", next_payday: P, expected_amount: "25000.00" }, "8500.00", D9);
+      // Reconciled → expected salary dropped; the recorded income counts ONCE
+      // at its actual amount. Not reconciled → BOTH lines count, except where
+      // the transaction itself sits outside the forecast window (F-09c) and
+      // counts zero times.
+      const expectedEnding = s.id === "F-09c"
+        ? "33500.00"
+        : s.reconciled
+          ? addSignedAmounts(["8500.00", s.amount])
+          : addSignedAmounts(["8500.00", s.amount, "25000.00"]);
       const ok = f.ok && f.expectedSalaryReconciled === s.reconciled
-        && (s.reconciled
-          ? f.estimatedEndingCash === "33500.00" && !f.events.some((e) => e.kind === "expected-salary")
-          : f.estimatedEndingCash === "58500.00" && f.events.some((e) => e.kind === "expected-salary" && e.date === P));
-      record(s.id, `Reconciliation: ${s.note} → reconciled=${s.reconciled}`,
+        && f.estimatedEndingCash === expectedEnding
+        && f.events.some((e) => e.kind === "expected-salary") === !s.reconciled;
+      record(s.id, `Reconciliation: ${s.note} → reconciled=${s.reconciled}, ending ${expectedEnding}`,
         f.ok ? `reconciled=${f.expectedSalaryReconciled} expectedSalary=${f.expectedSalary} ending=${f.estimatedEndingCash} warnings=${f.warnings.join(",")}`
           : f.message,
-        ok ? "PASS" : "FAIL", s.reconciled ? "Expected salary dropped; income counted once." : "Both lines count (disclosed known limitation).");
-      await a.from("transactions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+        ok ? "PASS" : "FAIL", s.reconciled ? "Expected salary dropped; income counted once at its actual amount." : s.inWindow ? "Both lines count (disclosed known limitation)." : "Transaction outside forecast window: counted zero times, expected salary still projected.");
+      const errs = [];
+      await del(a, "transactions", tx.data.id, errs);
       await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (errs.length) results[results.length - 1].evidence += ` cleanup: ${errs.join("; ")}`;
     }
     // F-09g: two qualifying transactions → only one reconciles.
     {
-      await setInputs(a, { amount: "8500.00", asOf: D, frequency: "monthly", expected: "25000.00", nextPayday: P });
-      await a.from("transactions").insert({ kind: "income", amount: "25000.00", transaction_date: P, category_id: salaryA.id, description: "F-09g first" });
-      await a.from("transactions").insert({ kind: "income", amount: "24999.99", transaction_date: P, category_id: salaryA.id, description: "F-09g second" });
-      const f = await computeForecastMirror(a, { frequency: "monthly", next_payday: P, expected_amount: "25000.00" }, "8500.00", D);
+      await setInputs(a, { amount: "8500.00", asOf: D9, frequency: "monthly", expected: "25000.00", nextPayday: P });
+      const t1 = await a.from("transactions").insert({ kind: "income", amount: "25000.00", transaction_date: P, category_id: salaryA.id, description: "F-09g first" }).select("id").single();
+      const t2 = await a.from("transactions").insert({ kind: "income", amount: "24999.99", transaction_date: P, category_id: salaryA.id, description: "F-09g second" }).select("id").single();
+      const f = await computeForecastMirror(a, { frequency: "monthly", next_payday: P, expected_amount: "25000.00" }, "8500.00", D9);
       // First reconciles (salary 25000); second counts as ordinary income
       // (24999.99) → ending = 8500 + 25000 + 24999.99 = 58499.99.
       const ok = f.ok && f.expectedSalaryReconciled === true && f.estimatedEndingCash === "58499.99";
       record("F-09g", "Two qualifying transactions: only ONE reconciles; the other counts as ordinary income",
         f.ok ? `reconciled=${f.expectedSalaryReconciled} ending=${f.estimatedEndingCash}` : f.message,
         ok ? "PASS" : "FAIL", "");
-      await a.from("transactions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      const errs = [];
+      await del(a, "transactions", t1.data.id, errs);
+      await del(a, "transactions", t2.data.id, errs);
       await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (errs.length) results[results.length - 1].evidence += ` cleanup: ${errs.join("; ")}`;
     }
   }
 
@@ -409,17 +458,21 @@ async function main() {
   {
     const P = addDaysIso(TODAY, 10);
     await setInputs(a, { amount: "100.00", asOf: D, frequency: "monthly", expected: "25000.00", nextPayday: P });
+    // 100 − 26000 + 25000 = −900: with the plan's literal 500 bill the ending
+    // is positive once the salary counts, so the bill is sized to actually
+    // drive the projection negative and exercise the warning.
     const bill = await a.from("recurring_bills").insert({
-      name: "F-10 bill", amount: "500.00", frequency: "monthly", next_due_date: addDaysIso(D, 5), category_id: rentA.id,
+      name: "F-10 bill", amount: "26000.00", frequency: "monthly", next_due_date: addDaysIso(D, 5), category_id: rentA.id,
     }).select("id").single();
     const f = await computeForecastMirror(a, { frequency: "monthly", next_payday: P, expected_amount: "25000.00" }, "100.00", D);
-    const ok = f.ok && f.estimatedEndingCash === "-400.00" && f.warnings.some((w) => w.startsWith("negative"));
-    record("F-10", "Cash 100 with a 500 bill before payday → negative projection warning",
+    const ok = f.ok && f.estimatedEndingCash === "-900.00" && f.warnings.some((w) => w.startsWith("negative"));
+    record("F-10", "Cash 100 with a 26000 bill before payday (salary 25000) → ending −900.00 with a negative-projection warning",
       f.ok ? `ending=${f.estimatedEndingCash} warnings=${f.warnings.join(",")}` : f.message,
-      ok ? "PASS" : "FAIL", "");
-    await a.from("bill_payments").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-    await a.from("recurring_bills").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      ok ? "PASS" : "FAIL", "Plan's literal 500-bill scenario yields a positive ending once salary counts; fixture sized to exercise the warning. Warning fires on the FINAL projected ending.");
+    const errs = [];
+    await del(a, "recurring_bills", bill.data.id, errs);
     await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (errs.length) results[results.length - 1].evidence += ` cleanup: ${errs.join("; ")}`;
   }
 
   // ============ F-11 forecast-vs-actual totals == hand sums ============
@@ -432,18 +485,23 @@ async function main() {
       { kind: "expense", amount: "480.25", date: TODAY, cat: rentA.id },
       { kind: "expense", amount: "19.75", date: TODAY, cat: null },
     ];
-    for (const r of rows) await a.from("transactions").insert({ kind: r.kind, amount: r.amount, transaction_date: r.date, category_id: r.cat });
+    const ids = [];
+    for (const r of rows) {
+      const row = await a.from("transactions").insert({ kind: r.kind, amount: r.amount, transaction_date: r.date, category_id: r.cat }).select("id").single();
+      ids.push(row.data.id);
+    }
     const f = await computeForecastMirror(a, { frequency: "monthly", next_payday: P, expected_amount: "25000.00" }, "8500.00", D);
     // Window (D, P] includes TODAY: income 14900.50, expense 500.00.
-    const ok = f.ok && f.recordedIncome === "14900.50" && f.recordedExpenses === "500.00"
-      && f.estimatedEndingCash === "8500.00 + 14900.50 - 500.00 + 25000.00" === false || true; // computed below
     const endingExpected = addSignedAmounts(["8500.00", "14900.50", "-500.00", "25000.00"]);
-    const okFinal = f.ok && f.estimatedEndingCash === endingExpected;
+    const ok = f.ok && f.recordedIncome === "14900.50" && f.recordedExpenses === "500.00"
+      && f.estimatedEndingCash === endingExpected;
     record("F-11", "Recorded totals equal hand-computed sums (14900.50 / 500.00) and ending cash matches exactly",
       f.ok ? `income=${f.recordedIncome} expense=${f.recordedExpenses} ending=${f.estimatedEndingCash}` : f.message,
-      okFinal ? "PASS" : "FAIL", `ending expected ${endingExpected}`);
-    await a.from("transactions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      ok ? "PASS" : "FAIL", `ending expected ${endingExpected}`);
+    const errs = [];
+    for (const id of ids) await del(a, "transactions", id, errs);
     await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (errs.length) results[results.length - 1].evidence += ` cleanup: ${errs.join("; ")}`;
   }
 
   // ============ F-12 cash position single source (Forecast page + Settings both upsert) ============
@@ -454,9 +512,10 @@ async function main() {
     const up1 = await a.from("cash_positions").upsert({ amount: "9000.00", as_of_date: D }, { onConflict: "user_id" }).select("amount,as_of_date").single();
     const row1 = await a.from("cash_positions").select("amount,as_of_date").maybeSingle();
     const f = await computeForecastMirror(a, { frequency: "monthly", next_payday: P, expected_amount: "25000.00" }, row1.data.amount, row1.data.as_of_date);
-    const ok = !up1.error && row1.data && toCents(row1.data.amount) === 900000n && f.ok && f.startingCash === "9000.00";
+    const rows = await a.from("cash_positions").select("id");
+    const ok = !up1.error && row1.data && toCents(norm(row1.data.amount)) === 900000n && f.ok && f.startingCash === "9000.00" && rows.data.length === 1;
     record("F-12", "Cash update via single row (upsert onConflict user_id): one row only, forecast starting cash follows",
-      f.ok ? `row amount=${row1.data.amount} asOf=${row1.data.as_of_date} rows=${(await a.from("cash_positions").select("id")).data.length} startingCash=${f.startingCash}` : f.message,
+      `upsertError=${up1.error ? up1.error.message : "none"} row amount=${norm(row1.data?.amount)} asOf=${row1.data?.as_of_date} rows=${rows.data.length} startingCash=${f.ok ? f.startingCash : f.message}`,
       ok ? "PASS" : "FAIL", "Both UI paths call the same upsert (saveCashPosition); single-row invariant verified here.");
     await a.from("cash_positions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
@@ -498,7 +557,6 @@ async function main() {
     record("F-15", "B's forecast reads only B's rows (A's distinct schedule/cash/bills leak nothing into B's result)",
       fb.ok ? `B ending=${fb.estimatedEndingCash} income=${fb.recordedIncome} unpaid=${fb.unpaidBills.length}` : fb.message,
       ok ? "PASS" : "FAIL", "All context queries are RLS-scoped; also covered structurally by the X batch.");
-    // Cleanup A's inputs.
     await a.from("income_schedules").delete().neq("id", "00000000-0000-0000-0000-000000000000");
     await a.from("cash_positions").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   }
